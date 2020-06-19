@@ -47,6 +47,8 @@ class DatasetBuilder(object):
         # arugmentation
         if train:
             transform.extend([
+                torchvision.transforms.RandomRotation(degrees=15),
+                torchvision.transforms.RandomAffine(degrees=0, translate=(0.1,0.1), scale=None, shear=None, resample=False, fillcolor=0),
                 torchvision.transforms.RandomHorizontalFlip(),
             ])
 
@@ -71,3 +73,18 @@ class DatasetBuilder(object):
     @property
     def num_classes(self):
         return self.DATASET_CONFIG[self.name].num_classes
+
+    def _get_mean_and_std(self):
+        """
+        Function that computes mean and std used in DATASET_CONFIG
+        """
+        #TODO: for svhn
+        if self.name == 'cifar10':
+            dataset = torchvision.datasets.CIFAR10(root=self.root_path, train=train, download=True)
+            all_data = np.stack([np.asarray(x[0]) for x in dataset])
+            mean = np.mean(all_data, axis=(0,2,3))
+            std = np.std(all_data, axis=(0,2,3))
+        else: 
+            raise NotImplementedError 
+        return mean, std
+            
