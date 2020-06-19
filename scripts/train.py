@@ -22,6 +22,14 @@ from selectivenet.loss import SelectiveLoss
 from selectivenet.data import DatasetBuilder
 from selectivenet.evaluator import Evaluator
 
+import numpy as np
+
+import wandb
+WANDB_PROJECT_NAME="selective_net"
+if "--unobserve" in sys.argv:
+    os.environ["WANDB_MODE"] = "dryrun"
+wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch"])
+
 # options
 @click.command()
 # model
@@ -38,23 +46,26 @@ from selectivenet.evaluator import Evaluator
 @click.option('--lr', type=float, default=0.1, help='learning rate')
 @click.option('--wd', type=float, default=5e-4, help='weight decay')
 @click.option('--momentum', type=float, default=0.9)
+@click.option('--nesterov', is_flag=True, default=True)
 # loss
 @click.option('--coverage', type=float, required=True)
 @click.option('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
 # logging
 @click.option('-s', '--suffix', type=str, default='')
 @click.option('-l', '--log_dir', type=str, required=True)
-
+# wandb
+@click.option('--unobserve', is_flag=True, default=False)
 
 def main(**kwargs):
     train(**kwargs)
 
 def train(**kwargs):
+    wandb.config.update(kwargs)
     FLAGS = FlagHolder()
     FLAGS.initialize(**kwargs)
     FLAGS.summary()
+    os.makedirs(os.path.dirname(os.path.join(FLAGS.log_dir, 'flags{}.json'.format(FLAGS.suffix))), exist_ok=True)
     FLAGS.dump(path=os.path.join(FLAGS.log_dir, 'flags{}.json'.format(FLAGS.suffix)))
-
     # dataset
     dataset_builder = DatasetBuilder(name=FLAGS.dataset, root_path=FLAGS.dataroot)
     train_dataset = dataset_builder(train=True, normalize=FLAGS.normalize)
@@ -69,10 +80,11 @@ def train(**kwargs):
 
     # optimizer
     params = model.parameters() 
-    optimizer = torch.optim.SGD(params, lr=FLAGS.lr, momentum=FLAGS.momentum, weight_decay=FLAGS.wd)
+    optimizer = torch.optim.SGD(params, lr=FLAGS.lr, momentum=FLAGS.momentum, weight_decay=FLAGS.wd, nesterov=FLAGS.nesterov)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
 
     # loss
+    #import pdb; pdb.set_trace()
     base_loss = torch.nn.CrossEntropyLoss(reduction='none')
     SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage)
 
@@ -80,7 +92,7 @@ def train(**kwargs):
     train_logger = Logger(path=os.path.join(FLAGS.log_dir,'train_log{}.csv'.format(FLAGS.suffix)), mode='train')
     val_logger   = Logger(path=os.path.join(FLAGS.log_dir,'val_log{}.csv'.format(FLAGS.suffix)), mode='val')
 
-    for ep in range(FLAGS.num_epochs):
+    for epoch in range(FLAGS.num_epochs):
         # pre epoch
         train_metric_dict = MetricDict()
         val_metric_dict = MetricDict()
@@ -115,10 +127,13 @@ def train(**kwargs):
             optimizer.step()
 
             train_metric_dict.update(loss_dict)
+        # wandb log
+        wandb.log(loss_dict, step=epoch)
         
         # validation
         with torch.autograd.no_grad():
             for i, (x,t) in enumerate(val_loader):
+                #import pdb; pdb.set_trace()
                 model.eval()
                 x = x.to('cuda', non_blocking=True)
                 t = t.to('cuda', non_blocking=True)
@@ -127,32 +142,37 @@ def train(**kwargs):
                 out_class, out_select, out_aux = model(x)
 
                 # compute selective loss
-                loss_dict = OrderedDict()
+                loss_dict_val = OrderedDict()
                 # loss dict includes, 'empirical_risk' / 'emprical_coverage' / 'penulty'
                 selective_loss, loss_dict = SelectiveCELoss(out_class, out_select, t)
+                loss_dict_val['emprical_coverage_val'] = loss_dict['emprical_coverage']
+                loss_dict_val['emprical_risk_val'] = loss_dict['emprical_risk']
+                loss_dict_val['penulty_val'] = loss_dict['penulty']
                 selective_loss *= FLAGS.alpha
-                loss_dict['selective_loss'] = selective_loss.detach().cpu().item()
+                loss_dict_val['selective_loss_val'] = selective_loss.detach().cpu().item()
                 # compute standard cross entropy loss
                 ce_loss = torch.nn.CrossEntropyLoss()(out_aux, t)
                 ce_loss *= (1.0 - FLAGS.alpha)
-                loss_dict['ce_loss'] = ce_loss.detach().cpu().item()
+                loss_dict_val['ce_loss_val'] = ce_loss.detach().cpu().item()
                 
                 # total loss
                 loss = selective_loss + ce_loss
-                loss_dict['loss'] = loss.detach().cpu().item()
+                loss_dict_val['loss_val'] = loss.detach().cpu().item()
 
                 # evaluation
                 evaluator = Evaluator(out_class.detach(), t.detach(), out_select.detach())
-                loss_dict.update(evaluator())
+                loss_dict_val.update(evaluator())
 
-                val_metric_dict.update(loss_dict)
+                val_metric_dict.update(loss_dict_val)
+        # wandb log
+        wandb.log(loss_dict_val, step=epoch)
 
         # post epoch
-        # print_metric_dict(ep, FLAGS.num_epochs, train_metric_dict.avg, mode='train')
-        print_metric_dict(ep, FLAGS.num_epochs, val_metric_dict.avg, mode='val')
+        # print_metric_dict(epoch, FLAGS.num_epochs, train_metric_dict.avg, mode='train')
+        print_metric_dict(epoch, FLAGS.num_epochs, val_metric_dict.avg, mode='val')
 
-        train_logger.log(train_metric_dict.avg, step=(ep+1))
-        val_logger.log(val_metric_dict.avg, step=(ep+1))
+        train_logger.log(train_metric_dict.avg, step=(epoch+1))
+        val_logger.log(val_metric_dict.avg, step=(epoch+1))
 
         scheduler.step()
 
