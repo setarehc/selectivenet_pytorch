@@ -31,28 +31,29 @@ def print_metric_dict(epoch, num_epochs, metric_dict:dict, reverse:bool=True, ov
     sys.stdout.write(print_message)
     sys.stdout.flush()
 
-
-def load_model(model, path, orator=True):
-    model.load_state_dict(torch.load(path))
-    if orator: print('>>> Model was loaded from "{}"'.format(path))
-
-def save_model(model, path, orator=True):
-    torch.save(
-        model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(),
-        path
-    )
+def save_checkpoint(checkpoint_dicts, path, orator=True):
+    os.makedirs(path, exist_ok=True)
+    # final epoch
+    torch.save(checkpoint_dicts[0], os.path.join(path, 'checkpoint_{}.pth'.format('final')))
+    # best validation loss
+    torch.save(checkpoint_dicts[1], os.path.join(path, 'checkpoint_{}.pth'.format('best_val')))
+    # best validation tf loss
+    torch.save(checkpoint_dicts[2], os.path.join(path, 'checkpoint_{}.pth'.format('best_val_tf')))
     if orator: print('>>> Model was saved to "{}"'.format(path))
 
-def load_checkpoint(model, optimizer, path):
-    checkpoint = torch.load(path)
-    model.load_state_dict(checkpoint['model'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    return checkpoint['epoch']
+def load_checkpoint(model, path, weight, orator=True, optimizer=None):
+    path = os.path.join(path, 'checkpoint_{}.pth'.format(weight))
+    if os.path.isfile(path):
+        checkpoint = torch.load(path)
+        model.load_state_dict(checkpoint['state_dict'])
+        if optimizer is not None: # used in train mode to continue training
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if orator: print('>>> Checkpoint was loaded from "{}"'.format(path))
+    else:
+       raise ValueError('Incorrect checkpoint: file does not exist')
 
-def save_checkpoint(model, optimizer, epoch, path):
-    checkpoint = {
-        'epoch': epoch,
-        'model': model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(),
-        'optimizer': optimizer.state_dict()
-    }
-    torch.save(checkpoint, path)
+def create_log_path(path, experminet):
+    experminet.save()
+    log_path = os.path.join(path, experminet.name)
+    os.makedirs(log_path, exist_ok=True)
+    return log_path

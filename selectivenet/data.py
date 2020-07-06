@@ -29,9 +29,9 @@ class DatasetBuilder(object):
         self.name = name
         self.root_path = os.path.join(root_path, self.name)
 
-    def __call__(self, train:bool, normalize:bool):
+    def __call__(self, train:bool, normalize:bool, aug_type:str):
         input_size = self.DATASET_CONFIG[self.name].input_size
-        transform = self._get_trainsform(self.name, input_size, train, normalize)
+        transform = self._get_transform(self.name, input_size, train, normalize, aug_type)
         if self.name == 'svhn':
             dataset = torchvision.datasets.SVHN(root=self.root_path, split='train' if self.train else 'test', transform=transform, download=True)
         elif self.name == 'cifar10':
@@ -41,17 +41,26 @@ class DatasetBuilder(object):
 
         return dataset
 
-    def _get_trainsform(self, name:str, input_size:int, train:bool, normalize:bool):
+    def _get_transform(self, name:str, input_size:int, train:bool, normalize:bool, aug_type:str):
         transform = []
-
         # arugmentation
         if train:
-            transform.extend([
-                torchvision.transforms.RandomRotation(degrees=15),
-                torchvision.transforms.RandomAffine(degrees=0, translate=(0.1,0.1), scale=None, shear=None, resample=False, fillcolor=0),
+            if aug_type == 'original':
+                transform.extend([
+                    torchvision.transforms.RandomHorizontalFlip(),
+                ])
+            elif aug_type == 'tf':
+                transform.extend([
+                    torchvision.transforms.RandomRotation(degrees=15),
+                    torchvision.transforms.RandomAffine(degrees=0, translate=(0.1,0.1), scale=None, shear=None, resample=False, fillcolor=0),
+                    torchvision.transforms.RandomHorizontalFlip(),
+                ])
+            elif aug_type == 'lili':
+                transform.extend([
+                torchvision.transforms.RandomResizedCrop(input_size),
                 torchvision.transforms.RandomHorizontalFlip(),
-            ])
-
+                ])
+            else: raise ValueError('Incorrect augmentation type')
         else:
             pass
 
