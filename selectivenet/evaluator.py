@@ -17,13 +17,13 @@ class Evaluator(object):
             t (B):  
             selection_out (B, 1)
         """
-        assert 0<=selection_threshold<=1.0
+        assert 0 <= selection_threshold <= 1.0
 
         self.prediction_result = prediction_out.argmax(dim=1) # (B)
         self.t = t.detach() # (B)
         if selection_out is not None:
-            condition = (selection_out >= selection_threshold)
-            self.selection_result = torch.where(condition, torch.ones_like(selection_out), torch.zeros_like(selection_out)).view(-1) # (B)
+            condition = (selection_out >= selection_threshold) # true/false
+            self.selection_result = torch.where(condition, torch.ones_like(selection_out), torch.zeros_like(selection_out)).view(-1) # (B) # one/zero
         else:
             self.selection_result = None
 
@@ -66,11 +66,11 @@ class Evaluator(object):
         assert h.size(0) == t.size(0) > 0
         assert len(h.size()) == len(t.size()) == 1
 
-        t = float(torch.where(h==t, torch.ones_like(h), torch.zeros_like(h)).sum())
-        f = float(torch.where(h!=t, torch.ones_like(h), torch.zeros_like(h)).sum())
+        eq_count = float(torch.where(h==t, torch.ones_like(h), torch.zeros_like(h)).sum())
+        neq_count = float(torch.where(h!=t, torch.ones_like(h), torch.zeros_like(h)).sum())
 
         # raw accuracy
-        acc = float(t/(t+f+1e-12))
+        acc = float(eq_count/(eq_count+neq_count+1e-12))
         return OrderedDict({'accuracy':acc})
 
     def _evaluate_multi_classification_with_rejection(self, h:torch.tensor, t:torch.tensor, r_binary:torch.tensor):
@@ -84,7 +84,7 @@ class Evaluator(object):
         Return:
             OrderedDict: 'acc'/'raw acc'
         """
-        assert h.size(0) == t.size(0) == r_binary.size(0)> 0
+        assert h.size(0) == t.size(0) == r_binary.size(0) > 0
         assert len(h.size()) == len(t.size()) == len(r_binary.size()) == 1
 
         # raw accuracy

@@ -20,7 +20,7 @@ class SelectiveLoss(torch.nn.Module):
         self.lm = lm
         self.alpha = alpha
 
-    def forward(self, prediction_out, selection_out, auxiliary_out, target, validation=False):
+    def forward(self, prediction_out, selection_out, auxiliary_out, target, mode='train'):
         """
         Args:
             prediction_out: (B,num_classes)
@@ -47,8 +47,7 @@ class SelectiveLoss(torch.nn.Module):
         # total loss
         loss_pytorch = self.alpha * selective_loss + (1.0 - self.alpha) * ce_loss
         
-
-        # recreating original implementation
+        
         # compute tf coverage
         selective_head_coverage = self.get_coverage(selection_out)
 
@@ -67,9 +66,16 @@ class SelectiveLoss(torch.nn.Module):
         # compute loss
         loss = self.alpha * selective_head_loss + (1.0 - self.alpha) * classification_head_loss
 
+        # empirical selective risk with rejection for test model
+        if mode == 'test':
+            g = (selection_out.squeeze(-1) > 0.5).float()
+            empirical_coverage_rjc = torch.mean(g)
+            empirical_risk_rjc = torch.mean(self.loss_func(prediction_out, target) * g.view(-1))
+            empirical_risk_rjc /= empirical_coverage_rjc  
+
         # loss information dict 
         pref = ''
-        if validation:
+        if mode == 'validation':
             pref = 'val_'
         loss_dict={}
         loss_dict['{}emprical_coverage'.format(pref)] = emprical_coverage.detach().cpu().item()
@@ -84,6 +90,8 @@ class SelectiveLoss(torch.nn.Module):
         loss_dict['{}selective_head_loss'.format(pref)] = selective_head_loss.detach().cpu().item() #selective_loss
         loss_dict['{}classification_head_loss'.format(pref)] = classification_head_loss.detach().cpu().item() #ce_loss
         loss_dict['{}loss'.format(pref)] = loss
+        if mode == 'test':
+            loss_dict['test_selective_risk'] = empirical_risk_rjc.detach().cpu().item()
 
         return loss_dict
 

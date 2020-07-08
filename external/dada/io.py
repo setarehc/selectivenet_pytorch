@@ -41,8 +41,7 @@ def save_checkpoint(checkpoint_dicts, path, orator=True):
     torch.save(checkpoint_dicts[2], os.path.join(path, 'checkpoint_{}.pth'.format('best_val_tf')))
     if orator: print('>>> Model was saved to "{}"'.format(path))
 
-def load_checkpoint(model, path, weight, orator=True, optimizer=None):
-    path = os.path.join(path, 'checkpoint_{}.pth'.format(weight))
+def load_checkpoint(model, path, orator=True, optimizer=None):
     if os.path.isfile(path):
         checkpoint = torch.load(path)
         model.load_state_dict(checkpoint['state_dict'])

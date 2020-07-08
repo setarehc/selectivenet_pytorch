@@ -29,9 +29,9 @@ class DatasetBuilder(object):
         self.name = name
         self.root_path = os.path.join(root_path, self.name)
 
-    def __call__(self, train:bool, normalize:bool, aug_type:str):
+    def __call__(self, train:bool, normalize:bool, augmentation:str):
         input_size = self.DATASET_CONFIG[self.name].input_size
-        transform = self._get_transform(self.name, input_size, train, normalize, aug_type)
+        transform = self._get_transform(self.name, input_size, train, normalize, augmentation)
         if self.name == 'svhn':
             dataset = torchvision.datasets.SVHN(root=self.root_path, split='train' if self.train else 'test', transform=transform, download=True)
         elif self.name == 'cifar10':
@@ -41,21 +41,21 @@ class DatasetBuilder(object):
 
         return dataset
 
-    def _get_transform(self, name:str, input_size:int, train:bool, normalize:bool, aug_type:str):
+    def _get_transform(self, name:str, input_size:int, train:bool, normalize:bool, augmentation:str):
         transform = []
         # arugmentation
         if train:
-            if aug_type == 'original':
+            if augmentation == 'original':
                 transform.extend([
                     torchvision.transforms.RandomHorizontalFlip(),
                 ])
-            elif aug_type == 'tf':
+            elif augmentation == 'tf':
                 transform.extend([
                     torchvision.transforms.RandomRotation(degrees=15),
                     torchvision.transforms.RandomAffine(degrees=0, translate=(0.1,0.1), scale=None, shear=None, resample=False, fillcolor=0),
                     torchvision.transforms.RandomHorizontalFlip(),
                 ])
-            elif aug_type == 'lili':
+            elif augmentation == 'lili':
                 transform.extend([
                 torchvision.transforms.RandomResizedCrop(input_size),
                 torchvision.transforms.RandomHorizontalFlip(),

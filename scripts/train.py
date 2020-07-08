@@ -31,8 +31,6 @@ if "--unobserve" in sys.argv:
     os.environ["WANDB_MODE"] = "dryrun"
 run = wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch"])
 
-from rec.tf_loss import TFSelectiveLoss
-
 # options
 @click.command()
 # model
@@ -75,10 +73,10 @@ def train(**kwargs):
     
     # dataset
     dataset_builder = DatasetBuilder(name=FLAGS.dataset, root_path=FLAGS.dataroot)
-    train_dataset = dataset_builder(train=True, normalize=FLAGS.normalize, aug_type=FLAGS.augmentation)
-    val_dataset   = dataset_builder(train=False, normalize=FLAGS.normalize, aug_type=FLAGS.augmentation)
-    train_loader  = torch.utils.data.DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=FLAGS.num_workers, pin_memory=True)
-    val_loader    = torch.utils.data.DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
+    train_dataset = dataset_builder(train=True, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
+    val_dataset = dataset_builder(train=False, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True, num_workers=FLAGS.num_workers, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
 
     # model
     features = vgg16_variant(dataset_builder.input_size, FLAGS.dropout_prob).cuda()
@@ -150,7 +148,7 @@ def train(**kwargs):
 
                 # loss and metrics
                 loss_dict_val = OrderedDict()
-                loss_dict_val = SelectiveCELoss(out_class, out_select, out_aux, t, validation=True)
+                loss_dict_val = SelectiveCELoss(out_class, out_select, out_aux, t, mode='validation')
                 loss_dict_val['val_loss_pytorch'] = loss_dict_val['val_loss_pytorch'].detach().cpu().item()
                 loss_dict_val['val_loss'] = loss_dict_val['val_loss'].detach().cpu().item()
 
