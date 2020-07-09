@@ -29,7 +29,7 @@ import wandb
 WANDB_PROJECT_NAME="selective_net"
 if "--unobserve" in sys.argv:
     os.environ["WANDB_MODE"] = "dryrun"
-run = wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch"])
+wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch"])
 
 # options
 @click.command()

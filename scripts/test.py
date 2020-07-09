@@ -14,6 +14,7 @@ from external.dada.flag_holder import FlagHolder
 from external.dada.metric import MetricDict
 from external.dada.io import print_metric_dict
 from external.dada.io import load_checkpoint
+from external.dada.io import print_config
 from external.dada.logger import Logger
 
 from selectivenet.vgg_variant import vgg16_variant
@@ -22,11 +23,13 @@ from selectivenet.loss import SelectiveLoss
 from selectivenet.data import DatasetBuilder
 from selectivenet.evaluator import Evaluator
 
+from selectivenet.utils import post_calibrate
+
 import wandb
 WANDB_PROJECT_NAME="selective_net"
 if "--unobserve" in sys.argv:
     os.environ["WANDB_MODE"] = "dryrun"
-run = wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test"])
+wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test"])
 
 # options
 @click.command()
@@ -46,6 +49,8 @@ run = wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test"])
 # loss
 @click.option('--coverage', type=float, required=True)
 @click.option('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
+# general
+@click.option('--calibrate', is_flag=True, default=False, help='performs post calibration if True')
 
 def main(**kwargs):
     test(**kwargs)
@@ -56,7 +61,7 @@ def test(**kwargs):
     FLAGS = FlagHolder()
     FLAGS.initialize(**kwargs)
     FLAGS.summary()
-
+    
     # dataset
     dataset_builder = DatasetBuilder(name=FLAGS.dataset, root_path=FLAGS.dataroot)
     test_dataset = dataset_builder(train=False, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
@@ -65,10 +70,20 @@ def test(**kwargs):
     # model
     features = vgg16_variant(dataset_builder.input_size, FLAGS.dropout_prob).cuda()
     model = SelectiveNet(features, FLAGS.dim_features, dataset_builder.num_classes).cuda()
-    best_model = wandb.restore(os.path.join('checkpoints', 'checkpoint_{}.pth'.format(FLAGS.weight)), run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id)) # model file
+    model_config = wandb.restore('flags.json', run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True)
+    print_config(path=model_config.name)
+    best_model = wandb.restore(os.path.join('checkpoints', 'checkpoint_{}.pth'.format(FLAGS.weight)), run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True) # model file
     load_checkpoint(model=model, path=best_model.name)
 
     if torch.cuda.device_count() > 1: model = torch.nn.DataParallel(model)
+
+    # post calibration
+    if FLAGS.calibrate:
+        val_dataset = dataset_builder(train=False, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
+        threshold = post_calibrate(model, val_loader, FLAGS.coverage)
+    else:
+        threshold = 0.5
 
     # loss
     base_loss = torch.nn.CrossEntropyLoss(reduction='none')
@@ -89,7 +104,7 @@ def test(**kwargs):
 
             # compute selective loss
             loss_dict = OrderedDict()
-            loss_dict = SelectiveCELoss(out_class, out_select, out_aux, t, mode='test')
+            loss_dict = SelectiveCELoss(out_class, out_select, out_aux, t, threshold, mode='test')
             loss = loss_dict['loss_pytorch']
             loss_dict['loss_pytorch'] = loss.detach().cpu().item()
             loss_tf = loss_dict['loss']

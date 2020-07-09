@@ -1,6 +1,8 @@
 import torch
 from torch.nn.modules.loss import _Loss
 
+import numpy as np
+
 class SelectiveLoss(torch.nn.Module):
     def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0):
         """
@@ -20,7 +22,7 @@ class SelectiveLoss(torch.nn.Module):
         self.lm = lm
         self.alpha = alpha
 
-    def forward(self, prediction_out, selection_out, auxiliary_out, target, mode='train'):
+    def forward(self, prediction_out, selection_out, auxiliary_out, target, threshold=0.5, mode='train'):
         """
         Args:
             prediction_out: (B,num_classes)
@@ -68,10 +70,7 @@ class SelectiveLoss(torch.nn.Module):
 
         # empirical selective risk with rejection for test model
         if mode == 'test':
-            g = (selection_out.squeeze(-1) > 0.5).float()
-            empirical_coverage_rjc = torch.mean(g)
-            empirical_risk_rjc = torch.mean(self.loss_func(prediction_out, target) * g.view(-1))
-            empirical_risk_rjc /= empirical_coverage_rjc  
+            test_selective_risk = self.get_selective_risk(prediction_out, selection_out, target, threshold) 
 
         # loss information dict 
         pref = ''
@@ -91,7 +90,7 @@ class SelectiveLoss(torch.nn.Module):
         loss_dict['{}classification_head_loss'.format(pref)] = classification_head_loss.detach().cpu().item() #ce_loss
         loss_dict['{}loss'.format(pref)] = loss
         if mode == 'test':
-            loss_dict['test_selective_risk'] = empirical_risk_rjc.detach().cpu().item()
+            loss_dict['test_selective_risk'] = test_selective_risk.detach().cpu().item()
 
         return loss_dict
 
@@ -141,3 +140,11 @@ class SelectiveLoss(torch.nn.Module):
         penalty = torch.max(self.coverage - empirical_coverage, torch.tensor([0.0], dtype=torch.float32, requires_grad=True, device='cuda'))**2
         loss = empirical_risk_variant + self.lm * penalty
         return loss
+
+    # selective risk in test mode
+    def get_selective_risk(self, prediction_out, selection_out, target, threshold):
+        g = (selection_out.squeeze(-1) >= threshold).float()
+        empirical_coverage_rjc = torch.mean(g)
+        empirical_risk_rjc = torch.mean(self.loss_func(prediction_out, target) * g.view(-1))
+        empirical_risk_rjc /= empirical_coverage_rjc
+        return empirical_risk_rjc

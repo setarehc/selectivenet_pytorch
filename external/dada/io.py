@@ -3,6 +3,8 @@ import sys
 
 import torch
 
+import json
+
 def print_metric_dict(epoch, num_epochs, metric_dict:dict, reverse:bool=True, overwrite:bool=False, mode:str='train'):
     """
     print metric dict info to command line
@@ -56,3 +58,9 @@ def create_log_path(path, experminet):
     log_path = os.path.join(path, experminet.name)
     os.makedirs(log_path, exist_ok=True)
     return log_path
+
+def print_config(path, orator=True):
+    if os.path.isfile(path):
+        config_file = open(path)
+        config_dict = json.load(config_file)
+    if orator: print('>>> Checkpoint config is; ', config_dict);    
