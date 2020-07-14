@@ -31,6 +31,17 @@ class SelectiveNet(torch.nn.Module):
             torch.nn.Sigmoid()
         )
 
+        self.selector1 = torch.nn.Sequential(
+            torch.nn.Linear(self.dim_features, self.dim_features),
+            torch.nn.ReLU(True),
+            torch.nn.BatchNorm1d(self.dim_features) 
+        )
+
+        self.selector2 = torch.nn.Sequential(
+            torch.nn.Linear(self.dim_features, 1),
+            torch.nn.Sigmoid()
+        )
+
         # represented as h() in the original paper
         self.aux_classifier = torch.nn.Sequential(
             torch.nn.Linear(self.dim_features, self.num_classes)
@@ -47,7 +58,10 @@ class SelectiveNet(torch.nn.Module):
         x = x.view(x.size(0), -1)
         
         prediction_out = self.classifier(x)
-        selection_out  = self.selector(x)
+        #selection_out  = self.selector(x)
+        sl1= self.selector1(x)
+        sl1_norm = sl1 / 10
+        selection_out = self.selector2(sl1_norm)
         auxiliary_out  = self.aux_classifier(x)
 
         return prediction_out, selection_out, auxiliary_out
