@@ -36,6 +36,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch"])
 # model
 @click.option('--dim_features', type=int, default=512)
 @click.option('--dropout_prob', type=float, default=0.3)
+@click.option('--div_by_ten', is_flag=True, default=False, help='divide by 10 when calculating g')
 # data
 @click.option('-d', '--dataset', type=str, required=True)
 @click.option('--dataroot', type=str, default='../data', help='path to dataset root')
@@ -80,7 +81,7 @@ def train(**kwargs):
 
     # model
     features = vgg16_variant(dataset_builder.input_size, FLAGS.dropout_prob).cuda()
-    model = SelectiveNet(features, FLAGS.dim_features, dataset_builder.num_classes).cuda()
+    model = SelectiveNet(features, FLAGS.dim_features, dataset_builder.num_classes, div_by_ten=FLAGS.div_by_ten).cuda()
     if torch.cuda.device_count() > 1: model = torch.nn.DataParallel(model)
 
     # optimizer

@@ -51,7 +51,7 @@ class SelectiveLoss(torch.nn.Module):
         
         
         # compute tf coverage
-        selective_head_coverage = self.get_coverage(selection_out)
+        selective_head_coverage = self.get_coverage(selection_out, threshold)
 
         # compute tf selective accuracy 
         selective_head_selective_acc = self.get_selective_acc(prediction_out, selection_out, target)
@@ -106,13 +106,13 @@ class SelectiveLoss(torch.nn.Module):
         return num / torch.sum(g)
 
     # Tensorflow
-    def get_coverage(self, selection_out):
+    def get_coverage(self, selection_out, threshold):
         """
         Equivalent to coverage function of source implementation
         Args:
             selection_out:  (B, 1)
         """
-        g = (selection_out.squeeze(-1) > 0.5).float()
+        g = (selection_out.squeeze(-1) >= threshold).float()
         return torch.mean(g)
 
     # Tensorflow
@@ -133,7 +133,6 @@ class SelectiveLoss(torch.nn.Module):
             prediction_out: (B,num_classes)
             selection_out:  (B, 1)
         """
-        
         ce = self.loss_func(prediction_out, target)
         empirical_risk_variant = torch.mean(ce * selection_out.view(-1))
         empirical_coverage = selection_out.mean() 

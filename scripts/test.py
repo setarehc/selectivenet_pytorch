@@ -39,6 +39,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test"])
 @click.option('-c', '--checkpoint', type=str, default='setarehc/selective_net', help='checkpoint path')
 @click.option('-w', '--weight', type=str, default='final', help='model weight to load') # final, best_val or best_val_tf
 @click.option('--exp_id', type=str, required=True, help='checkpoint experiment id in wandb')
+@click.option('--div_by_ten', is_flag=True, default=False, help='divide by 10 when calculating g')
 # data
 @click.option('-d', '--dataset', type=str, required=True)
 @click.option('--dataroot', type=str, default='/home/setarehc/selectivenet_pytorch/data', help='path to dataset root')
@@ -69,7 +70,7 @@ def test(**kwargs):
 
     # model
     features = vgg16_variant(dataset_builder.input_size, FLAGS.dropout_prob).cuda()
-    model = SelectiveNet(features, FLAGS.dim_features, dataset_builder.num_classes).cuda()
+    model = SelectiveNet(features, FLAGS.dim_features, dataset_builder.num_classes, div_by_ten=FLAGS.div_by_ten).cuda()
     model_config = wandb.restore('flags.json', run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True)
     print_config(path=model_config.name)
     best_model = wandb.restore(os.path.join('checkpoints', 'checkpoint_{}.pth'.format(FLAGS.weight)), run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True) # model file

@@ -5,7 +5,7 @@ class SelectiveNet(torch.nn.Module):
     SelectiveNet for classification with rejection option.
     In the experiments of original papaer, variant of VGG-16 is used as body block for feature extraction.  
     """
-    def __init__(self, features, dim_features:int, num_classes:int, init_weights=True):
+    def __init__(self, features, dim_features:int, num_classes:int, init_weights=True, div_by_ten=False):
         """
         Args
             features: feature extractor network (called body block in the paper).
@@ -16,6 +16,7 @@ class SelectiveNet(torch.nn.Module):
         self.features = features
         self.dim_features = dim_features
         self.num_classes = num_classes
+        self.div_by_ten = div_by_ten
         
         # represented as f() in the original paper
         self.classifier = torch.nn.Sequential(
@@ -23,24 +24,17 @@ class SelectiveNet(torch.nn.Module):
         )
 
         # represented as g() in the original paper
-        self.selector = torch.nn.Sequential(
-            torch.nn.Linear(self.dim_features, self.dim_features),
-            torch.nn.ReLU(True),
-            torch.nn.BatchNorm1d(self.dim_features),
-            torch.nn.Linear(self.dim_features, 1),
-            torch.nn.Sigmoid()
-        )
-
-        self.selector1 = torch.nn.Sequential(
+        self.pre_selector = torch.nn.Sequential(
             torch.nn.Linear(self.dim_features, self.dim_features),
             torch.nn.ReLU(True),
             torch.nn.BatchNorm1d(self.dim_features) 
         )
 
-        self.selector2 = torch.nn.Sequential(
+        self.post_selector = torch.nn.Sequential(
             torch.nn.Linear(self.dim_features, 1),
             torch.nn.Sigmoid()
         )
+        
 
         # represented as h() in the original paper
         self.aux_classifier = torch.nn.Sequential(
@@ -50,7 +44,8 @@ class SelectiveNet(torch.nn.Module):
         # initialize weights of heads
         if init_weights:
             self._initialize_weights(self.classifier)
-            self._initialize_weights(self.selector)
+            self._initialize_weights(self.pre_selector)
+            self._initialize_weights(self.post_selector)
             self._initialize_weights(self.aux_classifier)
 
     def forward(self, x):
@@ -58,10 +53,12 @@ class SelectiveNet(torch.nn.Module):
         x = x.view(x.size(0), -1)
         
         prediction_out = self.classifier(x)
-        #selection_out  = self.selector(x)
-        sl1= self.selector1(x)
-        sl1_norm = sl1 / 10
-        selection_out = self.selector2(sl1_norm)
+
+        selection_out= self.pre_selector(x)
+        if self.div_by_ten:
+            selection_out /= 10.0
+        selection_out = self.post_selector(selection_out)
+    
         auxiliary_out  = self.aux_classifier(x)
 
         return prediction_out, selection_out, auxiliary_out
