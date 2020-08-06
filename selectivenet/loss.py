@@ -3,6 +3,33 @@ from torch.nn.modules.loss import _Loss
 
 import numpy as np
 
+class NLLLoss(nn.Module):
+    '''
+    Negative log likelihood loss
+    '''
+    def __init__(self, distribution_type):
+        super().__init__()
+        self.distribution_type = distribution_type
+
+    def nll_loss_gaussian(self, mu, sigma, labels):
+        distribution = torch.distributions.normal.Normal(loc = mu, scale = sigma)
+        nll = - distribution.log_prob(labels)
+
+    def nll_loss_laplace(self, mu, b, labels):
+        distribution = torch.distributions.laplace.Laplace(loc = mu, scale = b)
+        nll = -distribution.log_prob(labels)
+
+    def forward(mu, uncertainty, labels):
+    
+        if self.distribution_type = 'Gaussian':
+            nll_loss = self.nll_loss_gaussian(mu, uncertainty, labels)
+        elif self.distribution_type = 'Laplace':
+            nll_loss = self.nll_loss_laplace(mu, uncertainty, labels)
+        else:
+            raise Exception("not implemented")
+
+        return nll_loss
+
 class SelectiveLoss(torch.nn.Module):
     def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0, regression=False):
         """

@@ -20,6 +20,11 @@ class SelectiveNetRegression(torch.nn.Module):
             torch.nn.BatchNorm1d(self.dim_features),
         )
 
+        self.uncertainty_predictor = torch.nn.Sequential(
+            torch.nn.Linear(self.dim_features, 1),
+            torch.nn.Softplus()
+        )
+
         # represented as f() in the original paper
         self.predictor = torch.nn.Sequential(
             torch.nn.Linear(self.dim_features, 1)
@@ -39,6 +44,10 @@ class SelectiveNetRegression(torch.nn.Module):
             torch.nn.Linear(self.dim_features, 1)
         )
 
+        self.uncertainty_aux_predictor = torch.nn.Sequential(
+            torch.nn.Linear(self.dim_features, 1),
+            torch.nn.Softplus()
+        )
         # initialize weights of heads
         if init_weights:
             self._initialize_weights(self.feature_extractor)
