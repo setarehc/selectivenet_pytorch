@@ -9,6 +9,48 @@ from collections import namedtuple
 import torch
 import torchvision
 
+import torch
+from torch.utils.data.dataset import Dataset
+from torchvision import transforms
+from sklearn.model_selection import train_test_split
+
+import numpy as np
+import pandas as pd
+
+class ConcreteDataset(Dataset):
+    def __init__(self, root, train, transform=None):
+        """
+        Args:
+            root (string): path to xls file
+            train (bool): indicates whether train or test
+            transform: Optional transform to be applied on a sample.
+        """
+        # Transforms
+        self.to_tensor = transforms.ToTensor()
+        # Read the csv file
+        data_df = pd.read_excel(os.path.join(root, 'ccs.xls'))  
+        data_df.columns = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'age', 'target']
+        # Last column contains target
+        target = data_df.target
+        # First 8 columns contain features
+        features = data_df.drop('target',axis=1)
+        # Split into train and test sets
+        X_train, X_test, y_train, y_test = train_test_split(features, target, train_size=0.8, test_size=0.2, random_state=1)
+        
+        if train:
+            self.X = X_train.to_numpy()
+            self.Y = y_train.to_numpy()
+        else:
+            self.X = X_test.to_numpy()
+            self.Y = y_test.to_numpy()
+        
+    def __getitem__(self, index):
+        return (self.X[index], self.Y[index])
+
+    def __len__(self):
+        return len(self.X)
+
+
 class DatasetBuilder(object):
     # tuple for dataset config
     DC = namedtuple('DatasetConfig', ['mean', 'std', 'input_size', 'num_classes'])
@@ -16,6 +58,7 @@ class DatasetBuilder(object):
     DATASET_CONFIG = {
         'svhn' :   DC([0.43768210, 0.44376970, 0.47280442], [0.19803012, 0.20101562, 0.19703614], 32, 10),
         'cifar10': DC([0.49139968, 0.48215841, 0.44653091], [0.24703223, 0.24348513, 0.26158784], 32, 10),
+        'ccs': DC([0], [0], 8, None),
     } 
 
     def __init__(self, name:str, root_path:str):
@@ -24,18 +67,22 @@ class DatasetBuilder(object):
         - name: name of dataset
         - root_path: root path to datasets
         """
-        if name not in self.DATASET_CONFIG.keys():
-            raise ValueError('name of dataset is invalid')
+        #if name not in self.DATASET_CONFIG.keys():
+            #raise ValueError('name of dataset is invalid')
         self.name = name
         self.root_path = os.path.join(root_path, self.name)
 
     def __call__(self, train:bool, normalize:bool, augmentation:str):
         input_size = self.DATASET_CONFIG[self.name].input_size
-        transform = self._get_transform(self.name, input_size, train, normalize, augmentation)
         if self.name == 'svhn':
+            transform = self._get_transform(self.name, input_size, train, normalize, augmentation)
             dataset = torchvision.datasets.SVHN(root=self.root_path, split='train' if self.train else 'test', transform=transform, download=True)
         elif self.name == 'cifar10':
+            transform = self._get_transform(self.name, input_size, train, normalize, augmentation)
             dataset = torchvision.datasets.CIFAR10(root=self.root_path, train=train, transform=transform, download=True)
+        elif self.name == 'ccs':
+            #transform = torchvision.transforms.Normalize(mean=self.DATASET_CONFIG[name].mean, std=self.DATASET_CONFIG[name].std)
+            dataset = ConcreteDataset(root=self.root_path, train=train, transform=None)
         else: 
             raise NotImplementedError 
 

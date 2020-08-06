@@ -1,4 +1,77 @@
 import torch
+class SelectiveNetRegression(torch.nn.Module):
+    """
+    SelectiveNet for regression with rejection option.
+    """
+    def __init__(self, input_dim:int, dim_features:int, init_weights=True):
+        """
+        Args
+            input_dim: dimension of input vector.
+            dim_featues: dimension of features from body block.
+        """
+        super(SelectiveNetRegression, self).__init__()
+        self.input_dim = input_dim
+        self.dim_features = dim_features
+
+        # main body block
+        self.feature_extractor = torch.nn.Sequential(
+            torch.nn.Linear(self.input_dim, self.dim_features),
+            torch.nn.ReLU(True),
+            torch.nn.BatchNorm1d(self.dim_features),
+        )
+
+        # represented as f() in the original paper
+        self.predictor = torch.nn.Sequential(
+            torch.nn.Linear(self.dim_features, 1)
+        )
+
+        # represented as g() in the original paper
+        self.selector = torch.nn.Sequential(
+            torch.nn.Linear(self.dim_features, 16),
+            torch.nn.ReLU(True),
+            torch.nn.BatchNorm1d(16), 
+            torch.nn.Linear(16, 1),
+            torch.nn.Sigmoid()
+        )
+
+        # represented as h() in the original paper
+        self.aux_predictor = torch.nn.Sequential(
+            torch.nn.Linear(self.dim_features, 1)
+        )
+
+        # initialize weights of heads
+        if init_weights:
+            self._initialize_weights(self.feature_extractor)
+            self._initialize_weights(self.predictor)
+            self._initialize_weights(self.selector)
+            self._initialize_weights(self.aux_predictor)
+        
+
+    def forward(self, x):
+        x = self.feature_extractor(x.float())
+        x = x.view(x.size(0), -1)
+        
+        prediction_out = self.predictor(x)
+
+        selection_out= self.selector(x)
+    
+        auxiliary_out  = self.aux_predictor(x)
+
+        return prediction_out, selection_out, auxiliary_out
+
+    def _initialize_weights(self, module):
+        for m in module.modules():
+            if isinstance(m, torch.nn.Conv2d):
+                torch.nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    torch.nn.init.constant_(m.bias, 0)
+            elif isinstance(m, torch.nn.BatchNorm1d):
+                torch.nn.init.constant_(m.weight, 1)
+                torch.nn.init.constant_(m.bias, 0)
+            elif isinstance(m, torch.nn.Linear):
+                torch.nn.init.normal_(m.weight, 0, 0.01)
+                torch.nn.init.constant_(m.bias, 0)
+
 
 class SelectiveNet(torch.nn.Module):
     """
@@ -9,7 +82,7 @@ class SelectiveNet(torch.nn.Module):
         """
         Args
             features: feature extractor network (called body block in the paper).
-            dim_featues: dimension of feature from body block.  
+            dim_featues: dimension of features from body block.  
             num_classes: number of classification class.
         """
         super(SelectiveNet, self).__init__()

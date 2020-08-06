@@ -4,7 +4,7 @@ from torch.nn.modules.loss import _Loss
 import numpy as np
 
 class SelectiveLoss(torch.nn.Module):
-    def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0):
+    def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0, regression=False):
         """
         Args:
             loss_func: base loss function. the shape of loss_func(x, target) shoud be (B). 
@@ -21,6 +21,7 @@ class SelectiveLoss(torch.nn.Module):
         self.coverage = coverage
         self.lm = lm
         self.alpha = alpha
+        self.regression = regression
 
     def forward(self, prediction_out, selection_out, auxiliary_out, target, threshold=0.5, mode='train'):
         """
@@ -28,6 +29,9 @@ class SelectiveLoss(torch.nn.Module):
             prediction_out: (B,num_classes)
             selection_out:  (B, 1)
         """
+        if self.regression:
+            prediction_out = prediction_out.view(-1)
+        
         # compute emprical coverage (=phi^)
         emprical_coverage = selection_out.mean() 
         
@@ -43,8 +47,14 @@ class SelectiveLoss(torch.nn.Module):
         # compute selective loss (=L(f,g))
         selective_loss = emprical_risk + penulty
         
+        # compute tf accuracy
+        classification_head_acc = self.get_accuracy(auxiliary_out, target)
+
+        if self.regression:
+            auxiliary_out = auxiliary_out.view(-1)
+
         # compute standard cross entropy loss
-        ce_loss = torch.nn.CrossEntropyLoss()(auxiliary_out, target)
+        ce_loss = self.loss_func(auxiliary_out, target)
         
         # total loss
         loss_pytorch = self.alpha * selective_loss + (1.0 - self.alpha) * ce_loss
@@ -56,14 +66,12 @@ class SelectiveLoss(torch.nn.Module):
         # compute tf selective accuracy 
         selective_head_selective_acc = self.get_selective_acc(prediction_out, selection_out, target)
 
-        # compute tf accuracy
-        classification_head_acc = self.get_accuracy(auxiliary_out, target)
         
         # compute tf selective loss (=selective_head_loss)
         selective_head_loss = self.get_selective_loss(prediction_out, selection_out, target)
 
         # compute tf cross entropy loss (=classification_head_loss)
-        classification_head_loss = torch.nn.CrossEntropyLoss()(auxiliary_out, target)
+        classification_head_loss = self.loss_func(auxiliary_out, target)
 
         # compute loss
         loss = self.alpha * selective_head_loss + (1.0 - self.alpha) * classification_head_loss
