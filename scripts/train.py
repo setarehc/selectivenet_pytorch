@@ -90,7 +90,7 @@ def train(**kwargs):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
 
     # loss
-    base_loss = torch.nn.CrossEntropyLoss(reduction='none')
+    base_loss = torch.nn.CrossEntropyLoss()
     SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha)
 
     # logger
