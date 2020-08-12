@@ -59,7 +59,6 @@ class SelectiveLoss(torch.nn.Module):
         # total loss
         loss_pytorch = self.alpha * selective_loss + (1.0 - self.alpha) * ce_loss
         
-        
         # compute tf coverage
         selective_head_coverage = self.get_coverage(selection_out, threshold)
 

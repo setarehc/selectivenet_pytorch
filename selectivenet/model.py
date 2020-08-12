@@ -3,7 +3,7 @@ class SelectiveNetRegression(torch.nn.Module):
     """
     SelectiveNet for regression with rejection option.
     """
-    def __init__(self, input_dim:int, dim_features:int, init_weights=True):
+    def __init__(self, input_dim:int, dim_features:int, init_weights=True, div_by_ten=False):
         """
         Args
             input_dim: dimension of input vector.
@@ -12,6 +12,7 @@ class SelectiveNetRegression(torch.nn.Module):
         super(SelectiveNetRegression, self).__init__()
         self.input_dim = input_dim
         self.dim_features = dim_features
+        self.div_by_ten = div_by_ten
 
         # main body block
         self.feature_extractor = torch.nn.Sequential(
@@ -26,10 +27,13 @@ class SelectiveNetRegression(torch.nn.Module):
         )
 
         # represented as g() in the original paper
-        self.selector = torch.nn.Sequential(
+        self.pre_selector = torch.nn.Sequential(
             torch.nn.Linear(self.dim_features, 16),
             torch.nn.ReLU(True),
-            torch.nn.BatchNorm1d(16), 
+            torch.nn.BatchNorm1d(16) 
+        )
+
+        self.post_selector = torch.nn.Sequential(
             torch.nn.Linear(16, 1),
             torch.nn.Sigmoid()
         )
@@ -43,7 +47,8 @@ class SelectiveNetRegression(torch.nn.Module):
         if init_weights:
             self._initialize_weights(self.feature_extractor)
             self._initialize_weights(self.predictor)
-            self._initialize_weights(self.selector)
+            self._initialize_weights(self.pre_selector)
+            self._initialize_weights(self.post_selector)
             self._initialize_weights(self.aux_predictor)
         
 
@@ -53,7 +58,10 @@ class SelectiveNetRegression(torch.nn.Module):
         
         prediction_out = self.predictor(x)
 
-        selection_out= self.selector(x)
+        selection_out= self.pre_selector(x)
+        if self.div_by_ten:
+            selection_out /= 10.0
+        selection_out = self.post_selector(selection_out)
     
         auxiliary_out  = self.aux_predictor(x)
 
