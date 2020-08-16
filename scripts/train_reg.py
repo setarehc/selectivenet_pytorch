@@ -73,6 +73,8 @@ def train(**kwargs):
     FLAGS.dump(path=os.path.join(log_path, 'flags{}.json'.format(FLAGS.suffix)))
     
     # dataset
+    
+    #import pdb; pdb.set_trace()
     dataset_builder = DatasetBuilder(name=FLAGS.dataset, root_path=FLAGS.dataroot)
     train_dataset = dataset_builder(train=True, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
     val_dataset = dataset_builder(train=False, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
@@ -80,7 +82,7 @@ def train(**kwargs):
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
 
     # model
-    model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features).cuda()
+    model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features, init_weights=True).cuda()
     if torch.cuda.device_count() > 1: model = torch.nn.DataParallel(model)
 
     # optimizer

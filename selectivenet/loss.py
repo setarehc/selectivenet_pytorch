@@ -77,7 +77,8 @@ class SelectiveLoss(torch.nn.Module):
 
         # empirical selective risk with rejection for test model
         if mode == 'test':
-            test_selective_risk = self.get_selective_risk(prediction_out, selection_out, target, threshold) 
+            test_selective_risk = self.get_selective_risk(prediction_out, selection_out, target, threshold)
+            test_selective_loss = self.get_filtered_loss(prediction_out, selection_out, target, threshold) 
 
         # loss information dict 
         pref = ''
@@ -96,8 +97,9 @@ class SelectiveLoss(torch.nn.Module):
         loss_dict['{}selective_head_loss'.format(pref)] = selective_head_loss.detach().cpu().item() #selective_loss
         loss_dict['{}classification_head_loss'.format(pref)] = classification_head_loss.detach().cpu().item() #ce_loss
         loss_dict['{}loss'.format(pref)] = loss
-        if mode == 'test':
+        if mode != 'test':
             loss_dict['test_selective_risk'] = test_selective_risk.detach().cpu().item()
+            loss_dict['test_selective_loss'] = test_selective_loss.detach().cpu().item()
 
         return loss_dict
 
@@ -147,10 +149,16 @@ class SelectiveLoss(torch.nn.Module):
         loss = empirical_risk_variant + self.lm * penalty
         return loss
 
-    # selective risk in test mode
+    # selective risk in test/validation mode
     def get_selective_risk(self, prediction_out, selection_out, target, threshold):
         g = (selection_out.squeeze(-1) >= threshold).float()
         empirical_coverage_rjc = torch.mean(g)
         empirical_risk_rjc = torch.mean(self.loss_func(prediction_out, target) * g.view(-1))
         empirical_risk_rjc /= empirical_coverage_rjc
         return empirical_risk_rjc
+    
+    # prediction loss in test/validation mode
+    def get_filtered_loss(self, prediction_out, selection_out, target, threshold):
+        g = (selection_out.squeeze(-1) >= threshold).float()
+        loss_rjc = torch.mean(self.loss_func(prediction_out, target) * g.view(-1))
+        return loss_rjc
