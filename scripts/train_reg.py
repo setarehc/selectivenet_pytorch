@@ -18,8 +18,8 @@ from external.dada.io import create_log_path
 from external.dada.logger import Logger
 
 from selectivenet.vgg_variant import vgg16_variant
-from selectivenet.model import SelectiveNet, SelectiveNetRegression
-from selectivenet.loss import SelectiveLoss
+from selectivenet.model import SelectiveNet, SelectiveNetRegression, ProbabilisticSelectiveNet
+from selectivenet.loss import SelectiveLoss, GaussianNLL
 from selectivenet.data import DatasetBuilder
 from selectivenet.evaluator import Evaluator
 
@@ -33,6 +33,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "regression"])
 
 # options
 @click.command()
+@click.option('--prob', is_flag=True, default=False)
 # model
 @click.option('--dim_features', type=int, default=64)
 @click.option('--dropout_prob', type=float, default=0.3)
@@ -73,8 +74,6 @@ def train(**kwargs):
     FLAGS.dump(path=os.path.join(log_path, 'flags{}.json'.format(FLAGS.suffix)))
     
     # dataset
-    
-    #import pdb; pdb.set_trace()
     dataset_builder = DatasetBuilder(name=FLAGS.dataset, root_path=FLAGS.dataroot)
     train_dataset = dataset_builder(train=True, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
     val_dataset = dataset_builder(train=False, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
@@ -82,7 +81,10 @@ def train(**kwargs):
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
 
     # model
-    model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features, init_weights=True).cuda()
+    if FLAGS.prob:
+        model = ProbabilisticSelectiveNet(dataset_builder.input_size, FLAGS.dim_features, init_weights=True).cuda()
+    else:
+        model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features, init_weights=True).cuda()
     if torch.cuda.device_count() > 1: model = torch.nn.DataParallel(model)
 
     # optimizer
@@ -91,15 +93,17 @@ def train(**kwargs):
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
 
     # loss
-    base_loss = torch.nn.MSELoss() #Not sure what to use for reduction. Followed the train code
-    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha, regression=True)
+    if FLAGS.prob:
+        base_loss = GaussianNLL()
+    else:
+        base_loss = torch.nn.MSELoss() #Not sure what to use for reduction. Followed the train code
+    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha, regression=True, prob_mode=FLAGS.prob)
 
     # logger
     train_logger = Logger(path=os.path.join(log_path,'train_log{}.csv'.format(FLAGS.suffix)), mode='train')
     val_logger   = Logger(path=os.path.join(log_path,'val_log{}.csv'.format(FLAGS.suffix)), mode='val')
 
     for epoch in range(FLAGS.num_epochs):
-        #import pdb; pdb.set_trace()
         # per epoch
         train_metric_dict = MetricDict()
         val_metric_dict = MetricDict()
@@ -160,15 +164,16 @@ def train(**kwargs):
                     save_dict_pytorch = {'epoch': epoch, 
                                 'state_dict': model.state_dict(),
                                 'optimizer_state_dict': optimizer.state_dict()}
+                    min_loss = loss_dict_val['val_loss_pytorch']
                 if loss_dict_val['val_loss'] < min_loss_tf:
                     save_dict = {'epoch': epoch, 
                                    'state_dict': model.state_dict(),
                                    'optimizer_state_dict': optimizer.state_dict()}
+                    min_loss_tf = loss_dict_val['val_loss']
 
                 # evaluation
-                evaluator = Evaluator(out_class.detach(), t.detach(), out_select.detach())
-                loss_dict_val.update(evaluator())
-
+                #evaluator = Evaluator(out_class.detach(), t.detach(), out_select.detach()) #TODO: Check. Removed to be able to run prob_mode
+                #loss_dict_val.update(evaluator()) #TODO: Check. Removed to be able to run prob_mode
                 val_metric_dict.update(loss_dict_val)
         # wandb log
         wandb.log(loss_dict_val, step=epoch)

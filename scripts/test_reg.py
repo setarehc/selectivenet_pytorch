@@ -18,8 +18,8 @@ from external.dada.io import print_config
 from external.dada.logger import Logger
 
 from selectivenet.vgg_variant import vgg16_variant
-from selectivenet.model import SelectiveNet, SelectiveNetRegression
-from selectivenet.loss import SelectiveLoss
+from selectivenet.model import SelectiveNet, SelectiveNetRegression, ProbabilisticSelectiveNet
+from selectivenet.loss import SelectiveLoss, GaussianNLL
 from selectivenet.data import DatasetBuilder
 from selectivenet.evaluator import Evaluator
 
@@ -33,6 +33,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test", "regression"])
 
 # options
 @click.command()
+@click.option('--prob', is_flag=True, default=False)
 # model
 @click.option('--dim_features', type=int, default=64)
 @click.option('--dropout_prob', type=float, default=0.3)
@@ -69,7 +70,10 @@ def test(**kwargs):
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
 
     # model
-    model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features).cuda()
+    if FLAGS.prob:
+        model = ProbabilisticSelectiveNet(dataset_builder.input_size, FLAGS.dim_features).cuda()
+    else:
+        model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features).cuda()
     model_config = wandb.restore('flags.json', run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True)
     print_config(path=model_config.name)
     best_model = wandb.restore(os.path.join('checkpoints', 'checkpoint_{}.pth'.format(FLAGS.weight)), run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True) # model file
@@ -86,8 +90,11 @@ def test(**kwargs):
         threshold = 0.5
 
     # loss
-    base_loss = torch.nn.MSELoss()
-    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, regression=True)
+    if FLAGS.prob:
+        base_loss = GaussianNLL()
+    else:
+        base_loss = torch.nn.MSELoss()
+    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, regression=True, prob_mode=FLAGS.prob)
    
     # pre epoch
     test_metric_dict = MetricDict()
@@ -112,8 +119,8 @@ def test(**kwargs):
             loss_dict['loss'] = loss_tf.detach().cpu().item()
 
             # evaluation
-            evaluator = Evaluator(out_class.detach(), t.detach(), out_select.detach())
-            loss_dict.update(evaluator())
+            #evaluator = Evaluator(out_class.detach(), t.detach(), out_select.detach())#TODO: Check. Removed to be able to run prob_mode
+            #loss_dict.update(evaluator())#TODO: Check. Removed to be able to run prob_mode
 
             test_metric_dict.update(loss_dict)
 

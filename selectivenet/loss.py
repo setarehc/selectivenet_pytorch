@@ -3,8 +3,18 @@ from torch.nn.modules.loss import _Loss
 
 import numpy as np
 
+class GaussianNLL(torch.nn.Module):
+    def __init__(self):
+        super(GaussianNLL, self).__init__()
+
+    def forward(self, prediction, target):
+        mu, sigma = prediction
+        likelihood = torch.distributions.Normal(mu, sigma)
+        nll = - likelihood.log_prob(target).sum(dim=1).mean()
+        return nll
+
 class SelectiveLoss(torch.nn.Module):
-    def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0, regression=False):
+    def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0, regression=False, prob_mode=False):
         """
         Args:
             loss_func: base loss function. the shape of loss_func(x, target) shoud be (B). 
@@ -22,6 +32,7 @@ class SelectiveLoss(torch.nn.Module):
         self.lm = lm
         self.alpha = alpha
         self.regression = regression
+        self.prob_mode = prob_mode
 
     def forward(self, prediction_out, selection_out, auxiliary_out, target, threshold=0.5, mode='train'):
         """
@@ -29,7 +40,7 @@ class SelectiveLoss(torch.nn.Module):
             prediction_out: (B,num_classes)
             selection_out:  (B, 1)
         """
-        if self.regression:
+        if self.regression and not self.prob_mode:
             prediction_out = prediction_out.view(-1)
         
         # compute emprical coverage (=phi^)
@@ -48,9 +59,9 @@ class SelectiveLoss(torch.nn.Module):
         selective_loss = emprical_risk + penulty
         
         # compute tf accuracy
-        classification_head_acc = self.get_accuracy(auxiliary_out, target)
+        classification_head_acc = self.get_accuracy(auxiliary_out, target, self.prob_mode)
 
-        if self.regression:
+        if self.regression and not self.prob_mode:
             auxiliary_out = auxiliary_out.view(-1)
 
         # compute standard cross entropy loss
@@ -63,7 +74,7 @@ class SelectiveLoss(torch.nn.Module):
         selective_head_coverage = self.get_coverage(selection_out, threshold)
 
         # compute tf selective accuracy 
-        selective_head_selective_acc = self.get_selective_acc(prediction_out, selection_out, target)
+        selective_head_selective_acc = self.get_selective_acc(prediction_out, selection_out, target, self.prob_mode)
 
         
         # compute tf selective loss (=selective_head_loss)
@@ -103,13 +114,15 @@ class SelectiveLoss(torch.nn.Module):
 
         return loss_dict
 
-    def get_selective_acc(self, prediction_out, selection_out, target):
+    def get_selective_acc(self, prediction_out, selection_out, target, prob_mode):
         """
         Equivalent to selective_acc function of source implementation
         Args:
             prediction_out: (B,num_classes)
             selection_out:  (B, 1)
         """
+        if prob_mode:
+            return torch.tensor([0.0], dtype=torch.float32, requires_grad=True, device='cuda')
         g = (selection_out.squeeze(-1) > 0.5).float()
         num = torch.dot(g, (torch.argmax(prediction_out, dim=-1) == target).float())
         return num / torch.sum(g)
@@ -125,7 +138,9 @@ class SelectiveLoss(torch.nn.Module):
         return torch.mean(g)
 
     # Tensorflow
-    def get_accuracy(self, auxiliary_out, target): #TODO: Check implementation with Lili
+    def get_accuracy(self, auxiliary_out, target, prob_mode): #TODO: Check implementation with Lili
+        if prob_mode:
+            return torch.tensor([0.0], dtype=torch.float32, requires_grad=True, device='cuda')
         """
         Equivalent to "accuracy" in Tensorflow
         Args:
