@@ -76,7 +76,7 @@ class SelectiveLoss(torch.nn.Module):
         loss = self.alpha * selective_head_loss + (1.0 - self.alpha) * classification_head_loss
 
         # empirical selective risk with rejection for test model
-        if mode == 'test':
+        if mode != 'train':
             test_selective_risk = self.get_selective_risk(prediction_out, selection_out, target, threshold)
             test_selective_loss = self.get_filtered_loss(prediction_out, selection_out, target, threshold) 
 
@@ -97,9 +97,9 @@ class SelectiveLoss(torch.nn.Module):
         loss_dict['{}selective_head_loss'.format(pref)] = selective_head_loss.detach().cpu().item() #selective_loss
         loss_dict['{}classification_head_loss'.format(pref)] = classification_head_loss.detach().cpu().item() #ce_loss
         loss_dict['{}loss'.format(pref)] = loss
-        if mode != 'test':
-            loss_dict['test_selective_risk'] = test_selective_risk.detach().cpu().item()
-            loss_dict['test_selective_loss'] = test_selective_loss.detach().cpu().item()
+        if mode != 'train':
+            loss_dict['{}test_selective_risk'.format(pref)] = test_selective_risk.detach().cpu().item()
+            loss_dict['{}test_selective_loss'.format(pref)] = test_selective_loss.detach().cpu().item()
 
         return loss_dict
 
