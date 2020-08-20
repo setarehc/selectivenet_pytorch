@@ -41,6 +41,8 @@ def save_checkpoint(checkpoint_dicts, path, orator=True):
     torch.save(checkpoint_dicts[1], os.path.join(path, 'checkpoint_{}.pth'.format('best_val')))
     # best validation tf loss
     torch.save(checkpoint_dicts[2], os.path.join(path, 'checkpoint_{}.pth'.format('best_val_tf')))
+    # best coverage loss
+    torch.save(checkpoint_dicts[3], os.path.join(path, 'checkpoint_{}.pth'.format('best_cov')))
     if orator: print('>>> Model was saved to "{}"'.format(path))
 
 def load_checkpoint(model, path, orator=True, optimizer=None):

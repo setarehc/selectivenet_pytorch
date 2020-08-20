@@ -37,7 +37,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test"])
 @click.option('--dim_features', type=int, default=512)
 @click.option('--dropout_prob', type=float, default=0.3)
 @click.option('-c', '--checkpoint', type=str, default='setarehc/selective_net', help='checkpoint path')
-@click.option('-w', '--weight', type=str, default='final', help='model weight to load') # final, best_val or best_val_tf
+@click.option('-w', '--weight', type=str, default='final', help='model weight to load') # final, best_val, best_val_tf, best_cov
 @click.option('--exp_id', type=str, required=True, help='checkpoint experiment id in wandb')
 @click.option('--div_by_ten', is_flag=True, default=False, help='divide by 10 when calculating g')
 # data
@@ -87,7 +87,7 @@ def test(**kwargs):
         threshold = 0.5
 
     # loss
-    base_loss = torch.nn.CrossEntropyLoss()
+    base_loss = torch.nn.CrossEntropyLoss(reduction='none')
     SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage)
    
     # pre epoch

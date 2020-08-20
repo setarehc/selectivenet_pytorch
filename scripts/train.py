@@ -54,6 +54,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch"])
 # loss
 @click.option('--coverage', type=float, required=True)
 @click.option('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
+@click.option('--lm', type=float, default=32.0)
 # logging
 @click.option('-s', '--suffix', type=str, default='')
 @click.option('-l', '--log_dir', type=str, default='../logs/train')
@@ -90,15 +91,14 @@ def train(**kwargs):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
 
     # loss
-    base_loss = torch.nn.CrossEntropyLoss()
-    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha)
+    base_loss = torch.nn.CrossEntropyLoss(reduction='none')
+    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha, lm=FLAGS.lm)
 
     # logger
     train_logger = Logger(path=os.path.join(log_path,'train_log{}.csv'.format(FLAGS.suffix)), mode='train')
     val_logger   = Logger(path=os.path.join(log_path,'val_log{}.csv'.format(FLAGS.suffix)), mode='val')
 
     for epoch in range(FLAGS.num_epochs):
-        #import pdb; pdb.set_trace()
         # per epoch
         train_metric_dict = MetricDict()
         val_metric_dict = MetricDict()
@@ -129,8 +129,9 @@ def train(**kwargs):
             optimizer.step()
 
             train_metric_dict.update(loss_dict)
+        
         # wandb log
-        wandb.log(loss_dict, step=epoch)
+        wandb.log(train_metric_dict.avg, step=epoch+1)
 
         # validation
         with torch.autograd.no_grad():
@@ -138,6 +139,8 @@ def train(**kwargs):
             save_dict = {}
             min_loss_tf = float('inf')
             save_dict_tf = {}
+            min_coverage_diff = float('inf')
+            save_dict_cov = {}
 
             for i, (x,t) in enumerate(val_loader):
                 model.eval()
@@ -153,25 +156,33 @@ def train(**kwargs):
                 loss_dict_val['val_loss_pytorch'] = loss_dict_val['val_loss_pytorch'].detach().cpu().item()
                 loss_dict_val['val_loss'] = loss_dict_val['val_loss'].detach().cpu().item()
 
-                # Save best models
-                if loss_dict_val['val_loss_pytorch'] < min_loss:
-                    save_dict_pytorch = {'epoch': epoch, 
-                                'state_dict': model.state_dict(),
-                                'optimizer_state_dict': optimizer.state_dict()}
-                if loss_dict_val['val_loss'] < min_loss_tf:
-                    save_dict = {'epoch': epoch, 
-                                   'state_dict': model.state_dict(),
-                                   'optimizer_state_dict': optimizer.state_dict()}
-
                 # evaluation
                 evaluator = Evaluator(out_class.detach(), t.detach(), out_select.detach())
                 loss_dict_val.update(evaluator())
 
                 val_metric_dict.update(loss_dict_val)
+        
         # wandb log
-        wandb.log(loss_dict_val, step=epoch)
+        wandb.log(val_metric_dict.avg, step=epoch+1)
 
-        # post epoch
+        # find best checkpoints
+        if val_metric_dict.avg['val_loss_pytorch'] < min_loss:
+            save_dict_pytorch = {'epoch': epoch+1, 
+                                'state_dict': model.state_dict(),
+                                'optimizer_state_dict': optimizer.state_dict()}
+            min_loss = val_metric_dict.avg['val_loss_pytorch']
+        if val_metric_dict.avg['val_loss'] < min_loss_tf:
+            save_dict = {'epoch': epoch+1, 
+                        'state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict()}
+            min_loss_tf = val_metric_dict.avg['val_loss']
+        if (val_metric_dict.avg['val_selective_head_coverage'] - FLAGS.coverage)**2 < min_coverage_diff:
+            save_dict_cov = {'epoch': epoch+1, 
+                            'state_dict': model.state_dict(),
+                            'optimizer_state_dict': optimizer.state_dict()}
+            min_coverage_diff = (val_metric_dict.avg['val_selective_head_coverage'] - FLAGS.coverage)**2
+        
+        # print status
         # print_metric_dict(epoch, FLAGS.num_epochs, train_metric_dict.avg, mode='train')
         print_metric_dict(epoch, FLAGS.num_epochs, val_metric_dict.avg, mode='val')
 
@@ -181,10 +192,10 @@ def train(**kwargs):
         scheduler.step()
 
     # save checkpoints
-    #run.save()
     checkpoint_dict = [{'state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         save_dict_pytorch, 
-                        save_dict]
+                        save_dict,
+                        save_dict_cov]
     checkpoint_path = os.path.join(log_path, 'checkpoints')
     save_checkpoint(checkpoint_dict, checkpoint_path)
 

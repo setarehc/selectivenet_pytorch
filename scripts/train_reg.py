@@ -19,7 +19,7 @@ from external.dada.logger import Logger
 
 from selectivenet.vgg_variant import vgg16_variant
 from selectivenet.model import SelectiveNet, SelectiveNetRegression, ProbabilisticSelectiveNet
-from selectivenet.loss import SelectiveLoss, GaussianNLL
+from selectivenet.loss import SelectiveLoss, NLLLoss
 from selectivenet.data import DatasetBuilder
 from selectivenet.evaluator import Evaluator
 
@@ -55,6 +55,8 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "regression"])
 # loss
 @click.option('--coverage', type=float, required=True)
 @click.option('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
+@click.option('--lm', type=float, default=32.0)
+@click.option('--distribution', type=str, default='Gaussian', help='type of likelihood in probabilistic model. Can be Gaussian or Laplace.') 
 # logging
 @click.option('-s', '--suffix', type=str, default='')
 @click.option('-l', '--log_dir', type=str, default='../logs/train')
@@ -94,10 +96,10 @@ def train(**kwargs):
 
     # loss
     if FLAGS.prob:
-        base_loss = GaussianNLL()
+        base_loss = NLLLoss(FLAGS.distribution, reduction='none')
     else:
-        base_loss = torch.nn.MSELoss() #Not sure what to use for reduction. Followed the train code
-    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha, regression=True, prob_mode=FLAGS.prob)
+        base_loss = torch.nn.MSELoss(reduction='none') #Not sure what to use for reduction. Followed the train code
+    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha, lm=FLAGS.lm, regression=True, prob_mode=FLAGS.prob)
 
     # logger
     train_logger = Logger(path=os.path.join(log_path,'train_log{}.csv'.format(FLAGS.suffix)), mode='train')
@@ -119,7 +121,6 @@ def train(**kwargs):
 
             # loss and metrics
             loss_dict = OrderedDict()
-            #import pdb; pdb.set_trace()
             loss_dict = SelectiveCELoss(out_class, out_select, out_aux, t)
             loss = loss_dict['loss_pytorch']
             loss_dict['loss_pytorch'] = loss.detach().cpu().item()
@@ -134,9 +135,11 @@ def train(**kwargs):
                 loss.backward()
             optimizer.step()
 
+            # update dictionary with results of batch
             train_metric_dict.update(loss_dict)
+
         # wandb log
-        wandb.log(loss_dict, step=epoch)
+        wandb.log(train_metric_dict.avg, step=epoch+1)
 
         # validation
         with torch.autograd.no_grad():
@@ -144,6 +147,8 @@ def train(**kwargs):
             save_dict = {}
             min_loss_tf = float('inf')
             save_dict_tf = {}
+            min_coverage_diff = float('inf')
+            save_dict_cov = {}
 
             for i, (x,t) in enumerate(val_loader):
                 model.eval()
@@ -158,40 +163,42 @@ def train(**kwargs):
                 loss_dict_val = SelectiveCELoss(out_class, out_select, out_aux, t, mode='validation')
                 loss_dict_val['val_loss_pytorch'] = loss_dict_val['val_loss_pytorch'].detach().cpu().item()
                 loss_dict_val['val_loss'] = loss_dict_val['val_loss'].detach().cpu().item()
+                
+                # update dictionary with results of batch
+                val_metric_dict.update(loss_dict_val)
+        
+        # wandb log
+        wandb.log(val_metric_dict.avg, step=epoch+1)
 
-                # Save best models
-                if loss_dict_val['val_loss_pytorch'] < min_loss:
-                    save_dict_pytorch = {'epoch': epoch, 
+        # find best checkpoints
+        if val_metric_dict.avg['val_loss_pytorch'] < min_loss:
+            save_dict_pytorch = {'epoch': epoch+1, 
                                 'state_dict': model.state_dict(),
                                 'optimizer_state_dict': optimizer.state_dict()}
-                    min_loss = loss_dict_val['val_loss_pytorch']
-                if loss_dict_val['val_loss'] < min_loss_tf:
-                    save_dict = {'epoch': epoch, 
-                                   'state_dict': model.state_dict(),
-                                   'optimizer_state_dict': optimizer.state_dict()}
-                    min_loss_tf = loss_dict_val['val_loss']
+            min_loss = val_metric_dict.avg['val_loss_pytorch']
+        if val_metric_dict.avg['val_loss'] < min_loss_tf:
+            save_dict = {'epoch': epoch+1, 
+                        'state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict()}
+            min_loss_tf = val_metric_dict.avg['val_loss']
+        if (val_metric_dict.avg['val_selective_head_coverage'] - FLAGS.coverage)**2 < min_coverage_diff:
+            save_dict_cov = {'epoch': epoch+1, 
+                            'state_dict': model.state_dict(),
+                            'optimizer_state_dict': optimizer.state_dict()}
+            min_coverage_diff = (val_metric_dict.avg['val_selective_head_coverage'] - FLAGS.coverage)**2
 
-                # evaluation
-                #evaluator = Evaluator(out_class.detach(), t.detach(), out_select.detach()) #TODO: Check. Removed to be able to run prob_mode
-                #loss_dict_val.update(evaluator()) #TODO: Check. Removed to be able to run prob_mode
-                val_metric_dict.update(loss_dict_val)
-        # wandb log
-        wandb.log(loss_dict_val, step=epoch)
-
-        # post epoch
+        # print status
         # print_metric_dict(epoch, FLAGS.num_epochs, train_metric_dict.avg, mode='train')
         print_metric_dict(epoch, FLAGS.num_epochs, val_metric_dict.avg, mode='val')
 
         train_logger.log(train_metric_dict.avg, step=(epoch+1))
         val_logger.log(val_metric_dict.avg, step=(epoch+1))
 
-        #scheduler.step()
-
     # save checkpoints
-    #run.save()
     checkpoint_dict = [{'state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         save_dict_pytorch, 
-                        save_dict]
+                        save_dict, 
+                        save_dict_cov]
     checkpoint_path = os.path.join(log_path, 'checkpoints')
     save_checkpoint(checkpoint_dict, checkpoint_path)
 

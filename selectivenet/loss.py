@@ -3,15 +3,44 @@ from torch.nn.modules.loss import _Loss
 
 import numpy as np
 
-class GaussianNLL(torch.nn.Module):
-    def __init__(self):
-        super(GaussianNLL, self).__init__()
+class NLLLoss(torch.nn.Module):
+    """
+    Negative log likelihood loss
+    """
+    def __init__(self, distribution_type, reduction='mean'):
+        super(NLLLoss, self).__init__()
+        self.distribution_type = distribution_type
+        self.reduction = reduction
+
+    def gaussian_nll(self, mu, sigma, labels):
+        likelihood = torch.distributions.Normal(mu, sigma)
+        nll = - likelihood.log_prob(labels.unsqueeze(-1))
+        if self.reduction == 'none':
+            return nll.sum(dim=1)
+        elif self.reduction == 'mean':
+            return nll.sum(dim=1).mean()
+        else:
+            raise Exception("Reductio type incorrect!")
+    
+    def laplace_nll(self, mu, b, labels):
+        likelihood = torch.distributions.Laplace(mu, b)
+        nll = - likelihood.log_prob(labels.unsqueeze(-1))
+        if self.reduction == 'none':
+            return nll.sum(dim=1)
+        elif self.reduction == 'mean':
+            return nll.sum(dim=1).mean()
+        else:
+            raise Exception("Reductio type incorrect!")
 
     def forward(self, prediction, target):
-        mu, sigma = prediction
-        likelihood = torch.distributions.Normal(mu, sigma)
-        nll = - likelihood.log_prob(target).sum(dim=1).mean()
-        return nll
+        mu, uncertainty = prediction
+        if self.distribution_type == 'Gaussian':
+            nll_loss = self.gaussian_nll(mu, uncertainty, target)
+        elif self.distribution_type == 'Laplace':
+            nll_loss = self.laplace_nll(mu, uncertainty, target)
+        else:
+            raise Exception("Distribution type incorrect!")
+        return nll_loss
 
 class SelectiveLoss(torch.nn.Module):
     def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0, regression=False, prob_mode=False):
@@ -40,8 +69,10 @@ class SelectiveLoss(torch.nn.Module):
             prediction_out: (B,num_classes)
             selection_out:  (B, 1)
         """
+        #import pdb; pdb.set_trace()
+        
         if self.regression and not self.prob_mode:
-            prediction_out = prediction_out.view(-1)
+                prediction_out = prediction_out.view(-1)
         
         # compute emprical coverage (=phi^)
         emprical_coverage = selection_out.mean() 
@@ -62,10 +93,10 @@ class SelectiveLoss(torch.nn.Module):
         classification_head_acc = self.get_accuracy(auxiliary_out, target, self.prob_mode)
 
         if self.regression and not self.prob_mode:
-            auxiliary_out = auxiliary_out.view(-1)
+                auxiliary_out = auxiliary_out.view(-1)
 
         # compute standard cross entropy loss
-        ce_loss = self.loss_func(auxiliary_out, target)
+        ce_loss = self.loss_func(auxiliary_out, target).mean()
         
         # total loss
         loss_pytorch = self.alpha * selective_loss + (1.0 - self.alpha) * ce_loss
@@ -81,7 +112,7 @@ class SelectiveLoss(torch.nn.Module):
         selective_head_loss = self.get_selective_loss(prediction_out, selection_out, target)
 
         # compute tf cross entropy loss (=classification_head_loss)
-        classification_head_loss = self.loss_func(auxiliary_out, target)
+        classification_head_loss = self.loss_func(auxiliary_out, target).mean()
 
         # compute loss
         loss = self.alpha * selective_head_loss + (1.0 - self.alpha) * classification_head_loss
@@ -89,7 +120,12 @@ class SelectiveLoss(torch.nn.Module):
         # empirical selective risk with rejection for test model
         if mode != 'train':
             test_selective_risk = self.get_selective_risk(prediction_out, selection_out, target, threshold)
-            test_selective_loss = self.get_filtered_loss(prediction_out, selection_out, target, threshold) 
+            test_selective_loss = self.get_filtered_loss(prediction_out, selection_out, target, threshold)
+            if self.regression and self.prob_mode:
+                test_diff = self.get_diff(prediction_out[0], selection_out, target, threshold)
+                test_risk  = self.get_risk(prediction_out[0], selection_out, target, threshold)
+            elif self.regression:
+                test_diff = self.get_diff(prediction_out, selection_out, target, threshold)
 
         # loss information dict 
         pref = ''
@@ -111,6 +147,10 @@ class SelectiveLoss(torch.nn.Module):
         if mode != 'train':
             loss_dict['{}test_selective_risk'.format(pref)] = test_selective_risk.detach().cpu().item()
             loss_dict['{}test_selective_loss'.format(pref)] = test_selective_loss.detach().cpu().item()
+            if self.regression:
+                loss_dict['{}test_diff'.format(pref)] = test_diff.detach().cpu().item()
+                if self.prob_mode:
+                    loss_dict['{}test_risk'.format(pref)] = test_risk.detach().cpu().item()
 
         return loss_dict
 
@@ -158,7 +198,7 @@ class SelectiveLoss(torch.nn.Module):
             selection_out:  (B, 1)
         """
         ce = self.loss_func(prediction_out, target)
-        empirical_risk_variant = torch.mean(ce * selection_out.view(-1))
+        empirical_risk_variant = (ce * selection_out.view(-1)).mean()
         empirical_coverage = selection_out.mean() 
         penalty = torch.max(self.coverage - empirical_coverage, torch.tensor([0.0], dtype=torch.float32, requires_grad=True, device='cuda'))**2
         loss = empirical_risk_variant + self.lm * penalty
@@ -168,12 +208,27 @@ class SelectiveLoss(torch.nn.Module):
     def get_selective_risk(self, prediction_out, selection_out, target, threshold):
         g = (selection_out.squeeze(-1) >= threshold).float()
         empirical_coverage_rjc = torch.mean(g)
-        empirical_risk_rjc = torch.mean(self.loss_func(prediction_out, target) * g.view(-1))
+        empirical_risk_rjc = (self.loss_func(prediction_out, target) * g.view(-1)).mean()
         empirical_risk_rjc /= empirical_coverage_rjc
         return empirical_risk_rjc
     
     # prediction loss in test/validation mode
     def get_filtered_loss(self, prediction_out, selection_out, target, threshold):
         g = (selection_out.squeeze(-1) >= threshold).float()
-        loss_rjc = torch.mean(self.loss_func(prediction_out, target) * g.view(-1))
+        loss_rjc = (self.loss_func(prediction_out, target) * g.view(-1)).mean()
         return loss_rjc
+    
+    # difference between prediction and ground-truth for test mode
+    def get_diff(self, prediction_out, selection_out, target, threshold):
+        g = (selection_out.squeeze(-1) >= threshold).float()
+        diff = (((prediction_out .view(-1) - target)**2) * g.view(-1)).mean()
+        #diff = (torch.abs(prediction_out.view(-1) - target) * g.view(-1)).mean()
+        return diff
+    
+    def get_risk(self, prediction_out, selection_out, target, threshold):
+        g = (selection_out.squeeze(-1) >= threshold).float()
+        cov = torch.mean(g)
+        diff = (((prediction_out.view(-1) - target)**2) * g.view(-1)).mean()
+        #diff = (torch.abs(prediction_out.view(-1) - target) * g.view(-1)).mean()
+        diff /= cov
+        return diff
