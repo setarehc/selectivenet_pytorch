@@ -25,6 +25,9 @@ from selectivenet.evaluator import Evaluator
 
 from selectivenet.utils import post_calibrate
 
+import json
+import matplotlib.pyplot as plt
+
 import wandb
 WANDB_PROJECT_NAME="selective_net"
 if "--unobserve" in sys.argv:
@@ -46,15 +49,18 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test", "regression"])
 @click.option('--dataroot', type=str, default='/home/setarehc/selectivenet_pytorch/data', help='path to dataset root')
 @click.option('-j', '--num_workers', type=int, default=8)
 @click.option('-N', '--batch_size', type=int, default=256)
-@click.option('--normalize', is_flag=True, default=True)
+@click.option('--normalize', is_flag=True, default=False)
 @click.option('--augmentation', type=str, default='original', help='type of augmentation set to original, tf or lili') # just for trials
 # loss
 @click.option('--coverage', type=float, required=True)
 @click.option('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
 @click.option('--lm', type=float, default=32.0)
-@click.option('--distribution', type=str, default='Gaussian', help='type of likelihood in probabilistic model. Can be Gaussian or Laplace.') 
+@click.option('--distribution', type=str, default='Gaussian', help='type of likelihood in probabilistic model. Can be Gaussian or Laplace.')
+@click.option('--loss', type=str, required=True, help='base loss. NLL or L1 or L2')
 # general
 @click.option('--calibrate', is_flag=True, default=False, help='performs post calibration if True')
+# wandb
+@click.option('--unobserve', is_flag=True, default=False)
 
 def main(**kwargs):
     test(**kwargs)
@@ -81,6 +87,11 @@ def test(**kwargs):
     best_model = wandb.restore(os.path.join('checkpoints', 'checkpoint_{}.pth'.format(FLAGS.weight)), run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True) # model file
     load_checkpoint(model=model, path=best_model.name)
 
+    # set config
+    config_file = open(model_config.name)
+    config_dict = json.load(config_file)
+    FLAGS._dict['normalize']=config_dict['normalize']
+
     if torch.cuda.device_count() > 1: model = torch.nn.DataParallel(model)
 
     # post calibration
@@ -92,10 +103,15 @@ def test(**kwargs):
         threshold = 0.5
 
     # loss
-    if FLAGS.prob:
+    if FLAGS.loss == 'L1':
+        base_loss = torch.nn.L1Loss(reduction='none')
+    elif FLAGS.loss == 'L2':
+        base_loss = torch.nn.MSELoss(reduction='none')
+    elif FLAGS.loss == 'NLL':
+        assert FLAGS.prob == True
         base_loss = NLLLoss(FLAGS.distribution, reduction='none')
     else:
-        base_loss = torch.nn.MSELoss(reduction='none')
+        raise Exception("Loss type incorrect!")
     SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha, lm=FLAGS.lm, regression=True, prob_mode=FLAGS.prob)
    
     # pre epoch
@@ -123,7 +139,7 @@ def test(**kwargs):
 
     # post epoch
     print_metric_dict(None, None, test_metric_dict.avg, mode='test')
-
+    
     return test_metric_dict.avg
 
 if __name__ == '__main__':

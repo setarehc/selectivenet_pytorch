@@ -19,7 +19,7 @@ from external.dada.logger import Logger
 
 from selectivenet.vgg_variant import vgg16_variant
 from selectivenet.model import SelectiveNet, SelectiveNetRegression, ProbabilisticSelectiveNet
-from selectivenet.loss import SelectiveLoss, NLLLoss
+from selectivenet.loss import SelectiveLoss, NLLLoss, SelectiveLossNew
 from selectivenet.data import DatasetBuilder
 from selectivenet.evaluator import Evaluator
 
@@ -29,12 +29,13 @@ import wandb
 WANDB_PROJECT_NAME="selective_net"
 if "--unobserve" in sys.argv:
     os.environ["WANDB_MODE"] = "dryrun"
-wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "regression"])
 
 # options
 @click.command()
+@click.option('--note', default=None)
 @click.option('--prob', is_flag=True, default=False)
 # model
+@click.option('--init_weights', is_flag=True, default=False)
 @click.option('--dim_features', type=int, default=64)
 @click.option('--dropout_prob', type=float, default=0.3)
 @click.option('--div_by_ten', is_flag=True, default=False, help='divide by 10 when calculating g')
@@ -43,7 +44,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "regression"])
 @click.option('--dataroot', type=str, default='../data', help='path to dataset root')
 @click.option('-j', '--num_workers', type=int, default=8)
 @click.option('-N', '--batch_size', type=int, default=256)
-@click.option('--normalize', is_flag=True, default=True)
+@click.option('--normalize', is_flag=True, default=False)
 @click.option('--augmentation', type=str, default='original', help='type of augmentation set to original, tf or lili') # just for trials
 # optimization
 @click.option('--num_epochs', type=int, default=800)
@@ -57,6 +58,7 @@ wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "regression"])
 @click.option('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
 @click.option('--lm', type=float, default=32.0)
 @click.option('--distribution', type=str, default='Gaussian', help='type of likelihood in probabilistic model. Can be Gaussian or Laplace.') 
+@click.option('--loss', type=str, required=True, help='base loss. L1 or L2 or NLL')
 # logging
 @click.option('-s', '--suffix', type=str, default='')
 @click.option('-l', '--log_dir', type=str, default='../logs/train')
@@ -67,14 +69,16 @@ def main(**kwargs):
     train(**kwargs)
 
 def train(**kwargs):
-    wandb.config.update(kwargs)
 
     FLAGS = FlagHolder()
     FLAGS.initialize(**kwargs)
     FLAGS.summary()
+    
+    wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "regression"], notes=FLAGS.note)
+    wandb.config.update(kwargs)
     log_path = wandb.run.dir
     FLAGS.dump(path=os.path.join(log_path, 'flags{}.json'.format(FLAGS.suffix)))
-    
+
     # dataset
     dataset_builder = DatasetBuilder(name=FLAGS.dataset, root_path=FLAGS.dataroot)
     train_dataset = dataset_builder(train=True, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
@@ -84,9 +88,9 @@ def train(**kwargs):
 
     # model
     if FLAGS.prob:
-        model = ProbabilisticSelectiveNet(dataset_builder.input_size, FLAGS.dim_features, init_weights=True).cuda()
+        model = ProbabilisticSelectiveNet(dataset_builder.input_size, FLAGS.dim_features, init_weights=FLAGS.init_weights).cuda()
     else:
-        model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features, init_weights=True).cuda()
+        model = SelectiveNetRegression(dataset_builder.input_size, FLAGS.dim_features, init_weights=FLAGS.init_weights).cuda()
     if torch.cuda.device_count() > 1: model = torch.nn.DataParallel(model)
 
     # optimizer
@@ -96,9 +100,15 @@ def train(**kwargs):
 
     # loss
     if FLAGS.prob:
+        assert FLAGS.loss == 'NLL'
         base_loss = NLLLoss(FLAGS.distribution, reduction='none')
     else:
-        base_loss = torch.nn.MSELoss(reduction='none') #Not sure what to use for reduction. Followed the train code
+        if FLAGS.loss == 'L1':
+            base_loss = torch.nn.L1Loss(reduction='none')
+        elif FLAGS.loss == 'L2':
+            base_loss = torch.nn.MSELoss(reduction='none') #Not sure what to use for reduction. Followed the train code
+        else:
+            raise Exception("Loss type incorrect!")
     SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage, alpha=FLAGS.alpha, lm=FLAGS.lm, regression=True, prob_mode=FLAGS.prob)
 
     # logger
@@ -167,6 +177,10 @@ def train(**kwargs):
                 # update dictionary with results of batch
                 val_metric_dict.update(loss_dict_val)
         
+        # print
+        if (epoch+1) % 5 == 0 or epoch == FLAGS.num_epochs-1:
+            print("Epoch [{}], val_loss: {:.4f}".format(epoch+1, val_metric_dict.avg['val_loss']))
+        
         # wandb log
         wandb.log(val_metric_dict.avg, step=epoch+1)
 
@@ -189,7 +203,7 @@ def train(**kwargs):
 
         # print status
         # print_metric_dict(epoch, FLAGS.num_epochs, train_metric_dict.avg, mode='train')
-        print_metric_dict(epoch, FLAGS.num_epochs, val_metric_dict.avg, mode='val')
+        #print_metric_dict(epoch, FLAGS.num_epochs, val_metric_dict.avg, mode='val')
 
         train_logger.log(train_metric_dict.avg, step=(epoch+1))
         val_logger.log(val_metric_dict.avg, step=(epoch+1))

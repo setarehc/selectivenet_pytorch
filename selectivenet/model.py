@@ -71,6 +71,7 @@ class ProbabilisticSelectiveNet(torch.nn.Module):
         
         mean = self.mean_predictor(x)
         std = self.std_predictor(x)
+        #std = torch.ones_like(std)
 
         selection_out= self.pre_selector(x)
         if self.div_by_ten:
@@ -79,6 +80,7 @@ class ProbabilisticSelectiveNet(torch.nn.Module):
     
         aux_mean = self.aux_mean_predictor(x)
         aux_std = self.aux_std_predictor(x)
+        #aux_std = torch.ones_like(aux_std)
 
         return (mean, std), selection_out, (aux_mean, aux_std)
 
@@ -159,6 +161,8 @@ class SelectiveNetRegression(torch.nn.Module):
         if self.div_by_ten:
             selection_out /= 10.0
         selection_out = self.post_selector(selection_out)
+
+        #selection_out = torch.ones_like(selection_out)
     
         auxiliary_out  = self.aux_predictor(x)
 

@@ -42,6 +42,7 @@ class NLLLoss(torch.nn.Module):
             raise Exception("Distribution type incorrect!")
         return nll_loss
 
+
 class SelectiveLoss(torch.nn.Module):
     def __init__(self, loss_func, coverage:float, alpha:float=0.5, lm:float=32.0, regression=False, prob_mode=False):
         """
@@ -69,10 +70,13 @@ class SelectiveLoss(torch.nn.Module):
             prediction_out: (B,num_classes)
             selection_out:  (B, 1)
         """
-        #import pdb; pdb.set_trace()
         
-        if self.regression and not self.prob_mode:
+        if self.regression:
+            if not self.prob_mode:
                 prediction_out = prediction_out.view(-1)
+            elif not isinstance(self.loss_func, NLLLoss):
+                prediction_out = prediction_out[0].view(-1)
+                auxiliary_out = auxiliary_out[0].view(-1)
         
         # compute emprical coverage (=phi^)
         emprical_coverage = selection_out.mean() 
@@ -119,13 +123,10 @@ class SelectiveLoss(torch.nn.Module):
 
         # empirical selective risk with rejection for test model
         if mode != 'train':
-            test_selective_risk = self.get_selective_risk(prediction_out, selection_out, target, threshold)
-            test_selective_loss = self.get_filtered_loss(prediction_out, selection_out, target, threshold)
-            if self.regression and self.prob_mode:
-                test_diff = self.get_diff(prediction_out[0], selection_out, target, threshold)
-                test_risk  = self.get_risk(prediction_out[0], selection_out, target, threshold)
-            elif self.regression:
-                test_diff = self.get_diff(prediction_out, selection_out, target, threshold)
+            test_risk = self.get_risk(prediction_out, selection_out, target, threshold)
+            test_risk_filtered = self.get_risk(prediction_out, selection_out, target, threshold, filter=True)
+            test_diff = self.get_diff(prediction_out, selection_out, target, threshold)
+            test_diff_filtered = self.get_diff(prediction_out, selection_out, target, threshold, filter=True)
 
         # loss information dict 
         pref = ''
@@ -145,12 +146,10 @@ class SelectiveLoss(torch.nn.Module):
         loss_dict['{}classification_head_loss'.format(pref)] = classification_head_loss.detach().cpu().item() #ce_loss
         loss_dict['{}loss'.format(pref)] = loss
         if mode != 'train':
-            loss_dict['{}test_selective_risk'.format(pref)] = test_selective_risk.detach().cpu().item()
-            loss_dict['{}test_selective_loss'.format(pref)] = test_selective_loss.detach().cpu().item()
-            if self.regression:
-                loss_dict['{}test_diff'.format(pref)] = test_diff.detach().cpu().item()
-                if self.prob_mode:
-                    loss_dict['{}test_risk'.format(pref)] = test_risk.detach().cpu().item()
+            loss_dict['{}test_risk'.format(pref)] = test_risk.detach().cpu().item()
+            loss_dict['{}test_risk_filtered'.format(pref)] = test_risk_filtered.detach().cpu().item()
+            loss_dict['{}test_diff'.format(pref)] = test_diff.detach().cpu().item()
+            loss_dict['{}test_diff_filtered'.format(pref)] = test_diff_filtered.detach().cpu().item()
 
         return loss_dict
 
@@ -205,30 +204,21 @@ class SelectiveLoss(torch.nn.Module):
         return loss
 
     # selective risk in test/validation mode
-    def get_selective_risk(self, prediction_out, selection_out, target, threshold):
-        g = (selection_out.squeeze(-1) >= threshold).float()
+    def get_risk(self, prediction_out, selection_out, target, threshold, filter=False):
+        if filter:
+            g = (selection_out.squeeze(-1) >= threshold).float()
+        else:
+            g = selection_out.squeeze(-1)
         empirical_coverage_rjc = torch.mean(g)
         empirical_risk_rjc = (self.loss_func(prediction_out, target) * g.view(-1)).mean()
         empirical_risk_rjc /= empirical_coverage_rjc
         return empirical_risk_rjc
     
     # prediction loss in test/validation mode
-    def get_filtered_loss(self, prediction_out, selection_out, target, threshold):
-        g = (selection_out.squeeze(-1) >= threshold).float()
+    def get_diff(self, prediction_out, selection_out, target, threshold, filter=False):
+        if filter:
+            g = (selection_out.squeeze(-1) >= threshold).float()
+        else:
+            g = selection_out.squeeze(-1)
         loss_rjc = (self.loss_func(prediction_out, target) * g.view(-1)).mean()
         return loss_rjc
-    
-    # difference between prediction and ground-truth for test mode
-    def get_diff(self, prediction_out, selection_out, target, threshold):
-        g = (selection_out.squeeze(-1) >= threshold).float()
-        diff = (((prediction_out .view(-1) - target)**2) * g.view(-1)).mean()
-        #diff = (torch.abs(prediction_out.view(-1) - target) * g.view(-1)).mean()
-        return diff
-    
-    def get_risk(self, prediction_out, selection_out, target, threshold):
-        g = (selection_out.squeeze(-1) >= threshold).float()
-        cov = torch.mean(g)
-        diff = (((prediction_out.view(-1) - target)**2) * g.view(-1)).mean()
-        #diff = (torch.abs(prediction_out.view(-1) - target) * g.view(-1)).mean()
-        diff /= cov
-        return diff
