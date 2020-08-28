@@ -19,7 +19,7 @@ from external.dada.logger import Logger
 
 from selectivenet.vgg_variant import vgg16_variant
 from selectivenet.model import SelectiveNet, SelectiveNetRegression, ProbabilisticSelectiveNet
-from selectivenet.loss import SelectiveLoss, NLLLoss, SelectiveLossNew
+from selectivenet.loss import SelectiveLoss, NLLLoss
 from selectivenet.data import DatasetBuilder
 from selectivenet.evaluator import Evaluator
 
