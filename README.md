@@ -1,6 +1,6 @@
 # SelectiveNet: A Pytorch Implementation
 
-This is a PyTorch implementation of the paper titled SelectiveNet: A Deep Neural Network with an Integrated Reject Option (Geifman and El-Yaniv, ICML2019).
+This is a PyTorch implementation of the paper titled SelectiveNet: A Deep Neural Network with an Integrated Reject Option [Geifman and El-Yaniv, ICML2019] 
 
 A deep neural network architecture with an integrated reject option that can be trained end-to-end for classification and regression tasks.
 
@@ -35,8 +35,10 @@ cd scripts
 python test.py --dataset cifar10 --exp_id 2fkl0ib7 --coverage 0.7
 ```
 
-## References
+## Acknowledgement
+- Implementation borrows from https://github.com/gatheluck/pytorch-SelectiveNet.
 
+## References
 - [Yonatan Geifman and Ran El-Yaniv. "SelectiveNet: A Deep Neural Network with an Integrated Reject Option.", in ICML, 2019.][1]
 - [Original implementation in Keras][2]
 
