@@ -10,18 +10,13 @@ A deep neural network architecture with an integrated reject option that can be 
    
 ## Requirements
 
-You will need the following to run the codes:
-- Python 3.5+
-- Pytorch 1.4+
-- CUDA
-- wandb
-- click
+Install requirements using `pip install -r requirements.txt`
 
-I run the code with Pytorch 1.4.0, CUDA 9.2
+I run the code with Pytorch 1.10.0, CUDA 10.2
 
 ## Usage
 ### Training
-Use `scripts/train.py` to train the network. Example usage:
+Use `scripts/train.py` to train the model. Example usage:
 ```bash
 # Example usage
 cd scripts
