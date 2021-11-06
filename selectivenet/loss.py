@@ -35,13 +35,13 @@ class SelectiveLoss(torch.nn.Module):
         emprical_risk = (self.loss_func(prediction_out, target)*selection_out.view(-1)).mean()
         emprical_risk = emprical_risk / emprical_coverage
 
-        # compute penulty (=psi)
+        # compute penalty (=psi)
         coverage = torch.tensor([self.coverage], dtype=torch.float32, requires_grad=True, device='cuda')
-        penulty = torch.max(coverage-emprical_coverage, torch.tensor([0.0], dtype=torch.float32, requires_grad=True, device='cuda'))**2
-        penulty *= self.lm
+        penalty = torch.max(coverage-emprical_coverage, torch.tensor([0.0], dtype=torch.float32, requires_grad=True, device='cuda'))**2
+        penalty *= self.lm
 
         # compute selective loss (=L(f,g))
-        selective_loss = emprical_risk + penulty
+        selective_loss = emprical_risk + penalty
         
         # compute standard cross entropy loss
         ce_loss = torch.nn.CrossEntropyLoss()(auxiliary_out, target)
@@ -49,20 +49,19 @@ class SelectiveLoss(torch.nn.Module):
         # total loss
         loss_pytorch = self.alpha * selective_loss + (1.0 - self.alpha) * ce_loss
         
-        
-        # compute tf coverage
+        # compute coverage based on source implementation
         selective_head_coverage = self.get_coverage(selection_out, threshold)
 
-        # compute tf selective accuracy 
+        # compute selective accuracy based on source implementation
         selective_head_selective_acc = self.get_selective_acc(prediction_out, selection_out, target)
 
-        # compute tf accuracy
+        # compute accuracy based on source implementation
         classification_head_acc = self.get_accuracy(auxiliary_out, target)
         
-        # compute tf selective loss (=selective_head_loss)
+        # compute selective loss (=selective_head_loss) based on source implementation
         selective_head_loss = self.get_selective_loss(prediction_out, selection_out, target)
 
-        # compute tf cross entropy loss (=classification_head_loss)
+        # compute cross entropy loss (=classification_head_loss) based on source implementation
         classification_head_loss = torch.nn.CrossEntropyLoss()(auxiliary_out, target)
 
         # compute loss
@@ -79,7 +78,7 @@ class SelectiveLoss(torch.nn.Module):
         loss_dict={}
         loss_dict['{}emprical_coverage'.format(pref)] = emprical_coverage.detach().cpu().item()
         loss_dict['{}emprical_risk'.format(pref)] = emprical_risk.detach().cpu().item()
-        loss_dict['{}penulty'.format(pref)] = penulty.detach().cpu().item()
+        loss_dict['{}penalty'.format(pref)] = penalty.detach().cpu().item()
         loss_dict['{}selective_loss'.format(pref)] = selective_loss.detach().cpu().item()
         loss_dict['{}ce_loss'.format(pref)] = ce_loss.detach().cpu().item()
         loss_dict['{}loss_pytorch'.format(pref)] = loss_pytorch
@@ -94,6 +93,7 @@ class SelectiveLoss(torch.nn.Module):
 
         return loss_dict
 
+    # based on source implementation
     def get_selective_acc(self, prediction_out, selection_out, target):
         """
         Equivalent to selective_acc function of source implementation
@@ -105,7 +105,7 @@ class SelectiveLoss(torch.nn.Module):
         num = torch.dot(g, (torch.argmax(prediction_out, dim=-1) == target).float())
         return num / torch.sum(g)
 
-    # Tensorflow
+    # based on source implementation
     def get_coverage(self, selection_out, threshold):
         """
         Equivalent to coverage function of source implementation
@@ -115,7 +115,7 @@ class SelectiveLoss(torch.nn.Module):
         g = (selection_out.squeeze(-1) >= threshold).float()
         return torch.mean(g)
 
-    # Tensorflow
+    # based on source implementation
     def get_accuracy(self, auxiliary_out, target): #TODO: Check implementation with Lili
         """
         Equivalent to "accuracy" in Tensorflow
@@ -125,7 +125,7 @@ class SelectiveLoss(torch.nn.Module):
         num = torch.sum((torch.argmax(auxiliary_out, dim=-1) == target).float())
         return num / len(auxiliary_out)
     
-    # Tensorflow
+    # based on source implementation
     def get_selective_loss(self, prediction_out, selection_out, target):
         """
         Equivalent to selective_loss function of source implementation

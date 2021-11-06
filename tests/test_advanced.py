@@ -14,14 +14,13 @@ def test_train_selective_loss():
     # dataset
     mean = [0.49139968, 0.48215841, 0.44653091]
     std  = [0.24703223, 0.24348513, 0.26158784]
-    #mean = torch.tensor(mean, dtype=torch.float32).cuda()
-    #std  = torch.tensor(std, dtype=torch.float32).cuda()
+    
     transform = torchvision.transforms.Compose([
         torchvision.transforms.RandomHorizontalFlip(),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(mean=mean, std=std)
     ])
-    data_root = os.path.join('/home/gatheluck/Scratch/selectivenet/data', 'cifar10')
+    data_root = os.path.join('/home/setarehc/scratch/selectivenet/data', 'cifar10')
     train_dataset = torchvision.datasets.CIFAR10(data_root, True, transform, download=True)
     train_loader  = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=8, pin_memory=True)
 
@@ -50,7 +49,7 @@ def test_train_selective_loss():
 
             # compute selective loss
             loss_dict = {}
-            # loss dict includes, 'empirical_risk' / 'emprical_coverage' / 'penulty'
+            # loss dict includes, 'empirical_risk' / 'emprical_coverage' / 'penalty'
             selective_loss, loss_dict = SelectiveCELoss(out_class, out_select, t)
             loss_dict['selective_loss'] = selective_loss.detach().cpu().item()
             

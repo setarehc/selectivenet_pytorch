@@ -87,7 +87,6 @@ class DatasetBuilder(object):
         """
         Function that computes mean and std used in DATASET_CONFIG
         """
-        #TODO: for svhn
         if self.name == 'cifar10':
             dataset = torchvision.datasets.CIFAR10(root=self.root_path, train=train, download=True)
             all_data = np.stack([np.asarray(x[0]) for x in dataset])

@@ -1,21 +1,18 @@
+from argparse import ArgumentParser
 import os
 import sys
 
 base = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../')
 sys.path.append(base)
 
-import click
 from collections import OrderedDict
 
 import torch
-import torchvision
 
-from external.dada.flag_holder import FlagHolder
 from external.dada.metric import MetricDict
 from external.dada.io import print_metric_dict
 from external.dada.io import load_checkpoint
 from external.dada.io import print_config
-from external.dada.logger import Logger
 
 from selectivenet.vgg_variant import vgg16_variant
 from selectivenet.model import SelectiveNet
@@ -29,66 +26,40 @@ import wandb
 WANDB_PROJECT_NAME="selective_net"
 if "--unobserve" in sys.argv:
     os.environ["WANDB_MODE"] = "dryrun"
-wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test"])
 
-# options
-@click.command()
-# model
-@click.option('--dim_features', type=int, default=512)
-@click.option('--dropout_prob', type=float, default=0.3)
-@click.option('-c', '--checkpoint', type=str, default='setarehc/selective_net', help='checkpoint path')
-@click.option('-w', '--weight', type=str, default='final', help='model weight to load') # final, best_val or best_val_tf
-@click.option('--exp_id', type=str, required=True, help='checkpoint experiment id in wandb')
-@click.option('--div_by_ten', is_flag=True, default=False, help='divide by 10 when calculating g')
-# data
-@click.option('-d', '--dataset', type=str, required=True)
-@click.option('--dataroot', type=str, default='/home/setarehc/selectivenet_pytorch/data', help='path to dataset root')
-@click.option('-j', '--num_workers', type=int, default=8)
-@click.option('-N', '--batch_size', type=int, default=128)
-@click.option('--normalize', is_flag=True, default=True)
-@click.option('--augmentation', type=str, default='original', help='type of augmentation set to original, tf or lili') # just for trials
-# loss
-@click.option('--coverage', type=float, required=True)
-@click.option('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
-# general
-@click.option('--calibrate', is_flag=True, default=False, help='performs post calibration if True')
+def main(args):
+    wandb.init(project=WANDB_PROJECT_NAME, tags=["pytorch", "test"])
+    test(args)
 
-def main(**kwargs):
-    test(**kwargs)
-
-def test(**kwargs):
-    wandb.config.update(kwargs)
-
-    FLAGS = FlagHolder()
-    FLAGS.initialize(**kwargs)
-    FLAGS.summary()
+def test(args):
+    wandb.config.update(args)
     
     # dataset
-    dataset_builder = DatasetBuilder(name=FLAGS.dataset, root_path=FLAGS.dataroot)
-    test_dataset = dataset_builder(train=False, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
+    dataset_builder = DatasetBuilder(name=args.dataset, root_path=args.dataroot)
+    test_dataset = dataset_builder(train=False, normalize=args.normalize, augmentation=args.augmentation)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
     # model
-    features = vgg16_variant(dataset_builder.input_size, FLAGS.dropout_prob).cuda()
-    model = SelectiveNet(features, FLAGS.dim_features, dataset_builder.num_classes, div_by_ten=FLAGS.div_by_ten).cuda()
-    model_config = wandb.restore('flags.json', run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True)
+    features = vgg16_variant(dataset_builder.input_size, args.dropout_prob).cuda()
+    model = SelectiveNet(features, args.dim_features, dataset_builder.num_classes, div_by_ten=args.div_by_ten).cuda()
+    model_config = wandb.restore('args.json', run_path=os.path.join(args.checkpoint, args.exp_id), replace=True)
     print_config(path=model_config.name)
-    best_model = wandb.restore(os.path.join('checkpoints', 'checkpoint_{}.pth'.format(FLAGS.weight)), run_path=os.path.join(FLAGS.checkpoint, FLAGS.exp_id), replace=True) # model file
+    best_model = wandb.restore(os.path.join('checkpoints', 'checkpoint_{}.pth'.format(args.weight)), run_path=os.path.join(args.checkpoint, args.exp_id), replace=True) # model file
     load_checkpoint(model=model, path=best_model.name)
 
     if torch.cuda.device_count() > 1: model = torch.nn.DataParallel(model)
 
     # post calibration
-    if FLAGS.calibrate:
-        val_dataset = dataset_builder(train=False, normalize=FLAGS.normalize, augmentation=FLAGS.augmentation)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False, num_workers=FLAGS.num_workers, pin_memory=True)
-        threshold = post_calibrate(model, val_loader, FLAGS.coverage)
+    if args.calibrate:
+        val_dataset = dataset_builder(train=False, normalize=args.normalize, augmentation=args.augmentation)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False, num_workers=args.num_workers, pin_memory=True)
+        threshold = post_calibrate(model, val_loader, args.coverage)
     else:
         threshold = 0.5
 
     # loss
     base_loss = torch.nn.CrossEntropyLoss(reduction='none')
-    SelectiveCELoss = SelectiveLoss(base_loss, coverage=FLAGS.coverage)
+    SelectiveCELoss = SelectiveLoss(base_loss, coverage=args.coverage)
    
     # pre epoch
     test_metric_dict = MetricDict()
@@ -123,4 +94,25 @@ def test(**kwargs):
     return test_metric_dict.avg
 
 if __name__ == '__main__':
-    main()
+    parser = ArgumentParser()
+    # model
+    parser.add_argument('--dim_features', type=int, default=512)
+    parser.add_argument('--dropout_prob', type=float, default=0.3)
+    parser.add_argument('-c', '--checkpoint', type=str, default='setarehc/selective_net', help='checkpoint path')
+    parser.add_argument('-w', '--weight', type=str, default='final', help='model weight to load') # final, best_val or best_val_tf
+    parser.add_argument('--exp_id', type=str, required=True, help='checkpoint experiment id in wandb')
+    parser.add_argument('--div_by_ten', action='store_true', help='divide by 10 when calculating g')
+    # data
+    parser.add_argument('-d', '--dataset', type=str, required=True)
+    parser.add_argument('--dataroot', type=str, default='/home/setarehc/selectivenet_pytorch/data', help='path to dataset root')
+    parser.add_argument('-j', '--num_workers', type=int, default=8)
+    parser.add_argument('-N', '--batch_size', type=int, default=128)
+    parser.add_argument('--normalize', action='store_false')
+    parser.add_argument('--augmentation', type=str, default='original', help='type of augmentation set to original, tf or lili') # just for trials
+    # loss
+    parser.add_argument('--coverage', type=float, required=True)
+    parser.add_argument('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
+    # general
+    parser.add_argument('--calibrate', action='store_true', help='performs post calibration if True')
+    args = parser.parse_args()
+    main(args)

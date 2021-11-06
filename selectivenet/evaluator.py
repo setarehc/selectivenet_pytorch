@@ -7,7 +7,6 @@ sys.path.append(base)
 from collections import OrderedDict
 
 import torch
-import torchvision
 
 class Evaluator(object):
     def __init__(self, prediction_out, t, selection_out=None, selection_threshold:float=0.5):
@@ -180,7 +179,6 @@ class Evaluator(object):
 if __name__ == '__main__':
     from selectivenet.vgg_variant import vgg16_variant
     from selectivenet.model import SelectiveNet
-    from selectivenet.loss import SelectiveLoss
     from selectivenet.data import DatasetBuilder
 
     # dataset
