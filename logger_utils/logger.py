@@ -8,7 +8,7 @@ import pandas
 from datetime import datetime
 from collections import OrderedDict
 
-from external.dada.misc import get_time_stamp
+from logger_utils.misc import get_time_stamp
 
 class Logger(object):
     """

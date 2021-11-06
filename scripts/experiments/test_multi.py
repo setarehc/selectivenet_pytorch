@@ -10,8 +10,8 @@ import glob
 
 from collections import OrderedDict
 
-from external.dada.flag_holder import FlagHolder
-from external.dada.logger import Logger
+from logger_utils.flag_holder import FlagHolder
+from logger_utils.logger import Logger
 from scripts.test import test
 
 # options

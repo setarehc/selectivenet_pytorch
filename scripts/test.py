@@ -9,10 +9,10 @@ from collections import OrderedDict
 
 import torch
 
-from external.dada.metric import MetricDict
-from external.dada.io import print_metric_dict
-from external.dada.io import load_checkpoint
-from external.dada.io import print_config
+from logger_utils.metric import MetricDict
+from logger_utils.io import print_metric_dict
+from logger_utils.io import load_checkpoint
+from logger_utils.io import print_config
 
 from selectivenet.vgg_variant import vgg16_variant
 from selectivenet.model import SelectiveNet

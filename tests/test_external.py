@@ -4,8 +4,8 @@ import sys
 base = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../')
 sys.path.append(base)
 
-from external.dada.logger import Logger
-from external.dada.misc import get_time_stamp
+from logger_utils.logger import Logger
+from logger_utils.misc import get_time_stamp
 
 def test_logger():
     log_path_root = '/home/setarehc/scratch/selectivenet/logs'

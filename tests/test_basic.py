@@ -11,8 +11,8 @@ from selectivenet.vgg_variant import vgg11_variant, vgg13_variant, vgg16_variant
 from selectivenet.model import SelectiveNet
 from selectivenet.loss import SelectiveLoss
 
-from external.dada.logger import Logger
-from external.dada.misc import get_time_stamp
+from logger_utils.logger import Logger
+from logger_utils.misc import get_time_stamp
 
 def test_make_layers():
     mode_length = {'A':33, 'B':41, 'D':53, 'E':65}

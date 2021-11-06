@@ -8,7 +8,7 @@ import subprocess
 import click
 import uuid
 
-from external.dada.flag_holder import FlagHolder
+from logger_utils.flag_holder import FlagHolder
 
 # options
 @click.command()

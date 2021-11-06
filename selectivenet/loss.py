@@ -1,5 +1,4 @@
 import torch
-from torch.nn.modules.loss import _Loss
 
 import numpy as np
 
