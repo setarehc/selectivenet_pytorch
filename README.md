@@ -14,6 +14,8 @@ Install requirements using `pip install -r requirements.txt`
 
 I run the code with Pytorch 1.10.0, CUDA 10.2
 
+Note: In the default version, you need Weights and Biases for logging the metrics and saving checkpoints when running `train.py`. In addition, the default path to load checkpoints from is Weights and Biases log path. You can disable Weights and Biases in training by using `--unobserve` as an input argument to `train.py` and changing `log_path` to a desired local directory for metric logging and checkpoint saving. Following this, you can disable Weights and Biases in test time by using `--unobserve` as an input argument. If checkpoints are saved locally, set input argument `--checkpoint` to the local directory and set `--weight` to the name of the checkpoint in `test.py`. 
+
 ## Usage
 ### Training
 Use `scripts/train.py` to train the model. Example usage:
