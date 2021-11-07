@@ -114,5 +114,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=0.5, help='balancing parameter between selective_loss and ce_loss')
     # general
     parser.add_argument('--calibrate', action='store_true', help='performs post calibration if True')
+    # wandb 
+    parser.add_argument('--unobserve', action='store_true', help='disable Weights & Biases') # flag - default is false 
     args = parser.parse_args()
     main(args)
